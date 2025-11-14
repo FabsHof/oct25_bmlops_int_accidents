@@ -1,7 +1,7 @@
-Project Name
+🚗 Road accidents in France
 ==============================
 
-This project is a starting Pack for MLOps projects based on the subject "movie_recommandation". It's not perfect so feel free to make some modifications on it.
+The objective of this MLOps project is to build a MLOps pipeline with the aim of predicting the severity of road accidents in France. Predictions will be based on historical data.
 
 Project Organization
 ------------
