@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: mlops_postgres
+
+    # Variablen kommen aus .env Datei
+    env_file:
+      - .env
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # (optional – wird nur ausgeführt, wenn DB zum 1. Mal erstellt wird)
+
+volumes:
+  postgres_data:
