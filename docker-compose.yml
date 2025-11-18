@@ -17,3 +17,30 @@ services:
 
 volumes:
   postgres_data:
+
+
+
+
+# SERVICES TO ADD
+
+# airflow            ← Orchestriert Pipelines
+
+# monitoring_service ← Überwacht Produktion
+
+# minio              ← Artifact Store (für MLflow)
+
+# model_api          ← dein Produktionsmodell  
+
+# streamlit
+
+# mlflow_server      ← Model Tracking
+# starting from here maybe:
+#  services:
+#   mlflow:
+#     image: mlflow_server
+#     volumes:
+#       - mlflow_artifacts:/mlflow/artifacts
+#       - mlflow_backend:/mlflow/backend
+# volumes:
+#   mlflow_artifacts:
+#   mlflow_backend:
