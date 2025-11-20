@@ -1,11 +1,16 @@
 [project]
-name = "mlops-accidents"
+name = "oct25-bmlops-int-accidents"
 version = "0.1.0"
-description = "forked from DataScientest-Studio/oct25_bmlops_int_accidents"
+description = "MLOps project to predict the severity of traffic accidents in France based on various features using machine learning techniques."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.121.2",
-    "httptools>=0.7.1",
+    "joblib>=1.5.2",
     "pandas>=2.3.3",
+    "scikit-learn>=1.7.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
 ]
