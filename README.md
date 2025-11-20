@@ -38,8 +38,24 @@ The project is structured as follows:
 
 1. Install Python 3.11 or higher.
 2. Install `uv` package manager from [uv package manager](https://uv.dev/).
-3. Set up an environment variables file `.env` in the root directory if needed.
+3. Set up an environment variables file `.env` in the root directory (e.g., see `.env.example`).
+3. Create a virtual environment:
+   ```bash
+   uv venv create .venv
+   ```
 4. Install dependencies:
    ```bash
    uv sync
    ```
+
+## ⌨️ Development
+
+1. Activate the environment:
+   ```bash
+   source .venv/bin/activate
+   ```
+2. Run the FastAPI application:
+   ```bash
+   make api_dev
+    ```
+3. Access the API documentation at `http://localhost:8000/docs` (find e.g. the API key in the `.env` file, set it via the "Authorize" button in the Swagger UI).
