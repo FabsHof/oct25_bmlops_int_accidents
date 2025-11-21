@@ -1,0 +1,31 @@
+services:
+  raw_db:
+    build:
+      context: .
+      dockerfile: Dockerfile.raw_db
+    container_name: raw_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: raw_accidents_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - raw_db_data:/var/lib/postgresql/data
+
+  clean_db:
+    build:
+      context: .
+      dockerfile: Dockerfile.clean_db
+    container_name: clean_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: clean_accidents_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - clean_db_data:/var/lib/postgresql/data
+volumes:
+  raw_db_data:
+  clean_db_data:

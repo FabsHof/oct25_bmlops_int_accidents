@@ -1,0 +1,2 @@
+FROM postgres:latest
+COPY scripts/clean_db_seed.sql /docker-entrypoint-initdb.d/
