@@ -221,3 +221,7 @@ logs/
 *.log
 .git/
 .DS_Store
+data/raw/*
+!data/raw/.gitkeep
+data/clean/*
+!data/clean/.gitkeep
