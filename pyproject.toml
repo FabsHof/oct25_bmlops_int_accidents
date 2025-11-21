@@ -19,3 +19,14 @@ dev = [
     "pytest>=9.0.1",
     "seaborn>=0.13.2",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers"
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+]
