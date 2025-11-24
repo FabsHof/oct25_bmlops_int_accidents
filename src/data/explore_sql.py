@@ -28,7 +28,10 @@ def load_table(table_name):
 
 
 if __name__ == "__main__":
-    df = load_table("accidents_full")
+ #   df = load_table("caracteristics")
+    df = load_table("users")
+ #   df = load_table("places")
+ #   df = load_table("vehicles")
     print(df.head())
     print(df.info())
 

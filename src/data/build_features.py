@@ -58,6 +58,6 @@ with engine.connect() as conn:
     """
 
     # SQL ausführen
-    with engine.connect() as conn:
-        conn.execute(text(sql))
-    print("Tabelle 'accidents_full' erfolgreich erstellt!")
+    with engine.begin() as conn:  # begin() öffnet Transaktion, commit nach exit
+    conn.execute(text(sql))
+
