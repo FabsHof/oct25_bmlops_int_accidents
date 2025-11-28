@@ -1,0 +1,23 @@
+# something similar to:
+
+# stages:
+#   ingest:
+#     cmd: python src/data/indigest_kaggle.py
+#     deps:
+#       - src/data/indigest_kaggle.py
+#     outs:
+#       - data/raw
+#   load_to_db:
+#     cmd: python src/data/load_to_db.py
+#     deps:
+#       - src/data/load_to_db.py
+#       - data/raw
+#     outs:
+#       []
+    # preprocess:
+    #   cmd: python src/data/preprocess.py
+    #   deps:
+    #     - src/data/preprocess.py
+    #     - data/raw
+    #   outs:
+    #     - data/processed
