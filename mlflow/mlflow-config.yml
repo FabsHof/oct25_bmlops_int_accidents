@@ -1,0 +1,12 @@
+# Backend store URI for experiment metadata
+backend_store_uri: postgresql+psycopg2://mlflow:mlflow@mlflow-db:5432/mlflow
+
+# Default artifact storage location (S3/MinIO)
+default_artifact_root: s3://mlflow-artifacts
+
+# Server host and port
+host: 0.0.0.0
+port: 5000
+
+# Number of workers for handling requests
+workers: 4
