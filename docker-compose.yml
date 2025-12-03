@@ -1,0 +1,17 @@
+services:
+  accidents_db:
+    build:
+      context: .
+      dockerfile: Dockerfile.accidents_db
+    container_name: db_container
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      #POSTGRES_DB: accidents_db # redundant with the DB creation from accidents_db_seed.sql 
+      # through the Dockerfile: leads to an error that the DB already exists (without the tables)
+    ports:
+      - "${POSTGRES_HOST_PORT}:${POSTGRES_CONT_PORT}"
+    volumes:
+      - accidents_db_data:/var/lib/postgresql
+volumes:
+  accidents_db_data:
