@@ -1,2 +1,0 @@
-FROM postgres:latest
-COPY scripts/raw_db_seed.sql /docker-entrypoint-initdb.d/
