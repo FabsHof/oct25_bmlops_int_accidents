@@ -1,4 +1,4 @@
-import logging
+from src.utils import logging
 import argparse
 
 def train_model():

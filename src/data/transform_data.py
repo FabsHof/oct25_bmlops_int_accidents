@@ -1,4 +1,4 @@
-import logging
+from src.utils import logging
 
 def transform_data():
     logging.info("Transforming data...")

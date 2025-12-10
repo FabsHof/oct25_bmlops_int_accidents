@@ -1,8 +1,8 @@
-import logging
+from src.utils import logging
 import argparse
 
 def predict_model(model_path: str, input_data: dict) -> dict:
-    logging.info(f'Predicting with model at {model_path} on input data: {input_data}.')
+    logging.info('Predicting with model at %s on input data: %s.', model_path, input_data)
     pass
 
 def main(model_path: str, input_data: dict) -> dict:

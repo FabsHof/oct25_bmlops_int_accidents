@@ -1,9 +1,10 @@
-import logging
 import os
 from datetime import datetime
 from os import path
 from typing import Callable, Optional
 import kagglehub as kh
+
+from src.utils import logging
 
 
 def download_data(
@@ -31,7 +32,7 @@ def download_data(
     if not download_func:
         raise ValueError('download_func cannot be empty')
 
-    logging.info(f'>>> Downloading dataset ...')
+    logging.info('>>> Downloading dataset ...')
     file_path = download_func()
 
     # Move downloaded file to target directory
@@ -45,7 +46,7 @@ def download_data(
     new_file_path = path.join(raw_data_path, os.path.basename(file_path))
     os.rename(file_path, new_file_path)
 
-    logging.info(f'>>> Data saved to: {new_file_path}')
+    logging.info('>>> Data saved to: %s', new_file_path)
     return new_file_path
 
 

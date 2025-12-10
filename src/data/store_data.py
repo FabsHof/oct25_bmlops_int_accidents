@@ -1,4 +1,3 @@
-import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -9,15 +8,10 @@ from psycopg2.extensions import connection
 from psycopg2.extras import execute_batch
 from dotenv import load_dotenv
 
+from src.utils import logging
+
 # Load environment variables
 load_dotenv()
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 
 def get_db_connection() -> connection:
@@ -43,14 +37,14 @@ def get_db_connection() -> connection:
     if not db_config['user'] or not db_config['password']:
         raise ValueError("POSTGRES_USER and POSTGRES_PASSWORD must be set in environment variables")
     
-    logger.info(f"Connecting to database: {db_config['database']} at {db_config['host']}:{db_config['port']}")
+    logging.info(f"Connecting to database: {db_config['database']} at {db_config['host']}:{db_config['port']}")
     
     try:
         conn = psycopg2.connect(**db_config)
-        logger.info("Database connection established successfully")
+        logging.info("Database connection established successfully")
         return conn
     except psycopg2.Error as e:
-        logger.error(f"Failed to connect to database: {e}")
+        logging.error(f"Failed to connect to database: {e}")
         raise
 
 
@@ -67,7 +61,7 @@ def find_latest_csv_directory(raw_data_path: str) -> Optional[Path]:
     raw_path = Path(raw_data_path)
     
     if not raw_path.exists():
-        logger.warning(f"Raw data path does not exist: {raw_data_path}")
+        logging.warning(f"Raw data path does not exist: {raw_data_path}")
         return None
     
     # Look for timestamped directories (e.g., 20251121_1318)
@@ -82,12 +76,12 @@ def find_latest_csv_directory(raw_data_path: str) -> Optional[Path]:
                         csv_dirs.append(subdir)
     
     if not csv_dirs:
-        logger.warning(f"No directories with CSV files found in {raw_data_path}")
+        logging.warning(f"No directories with CSV files found in {raw_data_path}")
         return None
     
     # Return the most recently modified directory
     latest_dir = max(csv_dirs, key=lambda p: p.stat().st_mtime)
-    logger.info(f"Found latest CSV directory: {latest_dir}")
+    logging.info(f"Found latest CSV directory: {latest_dir}")
     return latest_dir
 
 
@@ -111,12 +105,12 @@ def load_csv_to_dataframe(csv_path: Path, encoding: str = 'utf-8') -> pd.DataFra
     
     try:
         df = pd.read_csv(csv_path, encoding=encoding)
-        logger.info(f"Loaded {csv_path.name} with {len(df)} rows using {encoding} encoding")
+        logging.info(f"Loaded {csv_path.name} with {len(df)} rows using {encoding} encoding")
         return df
     except UnicodeDecodeError:
-        logger.warning(f"Failed to load {csv_path.name} with {encoding}, trying latin-1")
+        logging.warning(f"Failed to load {csv_path.name} with {encoding}, trying latin-1")
         df = pd.read_csv(csv_path, encoding='latin-1')
-        logger.info(f"Loaded {csv_path.name} with {len(df)} rows using latin-1 encoding")
+        logging.info(f"Loaded {csv_path.name} with {len(df)} rows using latin-1 encoding")
         return df
 
 
@@ -131,7 +125,7 @@ def store_caracteristics(conn: connection, df: pd.DataFrame) -> int:
     Returns:
         Number of rows inserted
     """
-    logger.info("Storing caracteristics data...")
+    logging.info("Storing caracteristics data...")
     
     # Column mapping: CSV column -> DB column (lowercase)
     df_clean = df.copy()
@@ -174,11 +168,11 @@ def store_caracteristics(conn: connection, df: pd.DataFrame) -> int:
         
         conn.commit()
         inserted_count = len(data_tuples)
-        logger.info(f"Successfully stored {inserted_count} caracteristics records")
+        logging.info(f"Successfully stored {inserted_count} caracteristics records")
         return inserted_count
     except Exception as e:
         conn.rollback()
-        logger.error(f"Error storing caracteristics data: {e}")
+        logging.error(f"Error storing caracteristics data: {e}")
         raise
     finally:
         cursor.close()
@@ -195,7 +189,7 @@ def store_holidays(conn: connection, df: pd.DataFrame) -> int:
     Returns:
         Number of rows inserted
     """
-    logger.info("Storing holidays data...")
+    logging.info("Storing holidays data...")
     
     df_clean = df.copy()
     df_clean.columns = df_clean.columns.str.lower()
@@ -217,11 +211,11 @@ def store_holidays(conn: connection, df: pd.DataFrame) -> int:
         
         conn.commit()
         inserted_count = len(data_tuples)
-        logger.info(f"Successfully stored {inserted_count} holidays records")
+        logging.info(f"Successfully stored {inserted_count} holidays records")
         return inserted_count
     except Exception as e:
         conn.rollback()
-        logger.error(f"Error storing holidays data: {e}")
+        logging.error(f"Error storing holidays data: {e}")
         raise
     finally:
         cursor.close()
@@ -238,7 +232,7 @@ def store_places(conn: connection, df: pd.DataFrame) -> int:
     Returns:
         Number of rows inserted
     """
-    logger.info("Storing places data...")
+    logging.info("Storing places data...")
     
     df_clean = df.copy()
     df_clean.columns = df_clean.columns.str.lower()
@@ -266,11 +260,11 @@ def store_places(conn: connection, df: pd.DataFrame) -> int:
         
         conn.commit()
         inserted_count = len(data_tuples)
-        logger.info(f"Successfully stored {inserted_count} places records")
+        logging.info(f"Successfully stored {inserted_count} places records")
         return inserted_count
     except Exception as e:
         conn.rollback()
-        logger.error(f"Error storing places data: {e}")
+        logging.error(f"Error storing places data: {e}")
         raise
     finally:
         cursor.close()
@@ -287,7 +281,7 @@ def store_users(conn: connection, df: pd.DataFrame) -> int:
     Returns:
         Number of rows inserted
     """
-    logger.info("Storing users data...")
+    logging.info("Storing users data...")
     
     df_clean = df.copy()
     df_clean.columns = df_clean.columns.str.lower()
@@ -323,11 +317,11 @@ def store_users(conn: connection, df: pd.DataFrame) -> int:
         
         conn.commit()
         inserted_count = len(data_tuples)
-        logger.info(f"Successfully stored {inserted_count} users records")
+        logging.info(f"Successfully stored {inserted_count} users records")
         return inserted_count
     except Exception as e:
         conn.rollback()
-        logger.error(f"Error storing users data: {e}")
+        logging.error(f"Error storing users data: {e}")
         raise
     finally:
         cursor.close()
@@ -344,7 +338,7 @@ def store_vehicles(conn: connection, df: pd.DataFrame) -> int:
     Returns:
         Number of rows inserted
     """
-    logger.info("Storing vehicles data...")
+    logging.info("Storing vehicles data...")
     
     df_clean = df.copy()
     df_clean.columns = df_clean.columns.str.lower()
@@ -381,11 +375,11 @@ def store_vehicles(conn: connection, df: pd.DataFrame) -> int:
         
         conn.commit()
         inserted_count = len(data_tuples)
-        logger.info(f"Successfully stored {inserted_count} vehicles records")
+        logging.info(f"Successfully stored {inserted_count} vehicles records")
         return inserted_count
     except Exception as e:
         conn.rollback()
-        logger.error(f"Error storing vehicles data: {e}")
+        logging.error(f"Error storing vehicles data: {e}")
         raise
     finally:
         cursor.close()
@@ -409,7 +403,7 @@ def store_data(
         ValueError: If raw_data_path is invalid or CSV files not found
         Exception: If database operations fail
     """
-    logger.info("Starting data storage process...")
+    logging.info("Starting data storage process...")
     
     # Get raw data path from argument or environment variable
     if raw_data_path is None:
@@ -468,18 +462,18 @@ def store_data(
         df_vehicles = load_csv_to_dataframe(csv_files['vehicles'])
         results['vehicles'] = store_vehicles(conn, df_vehicles)
         
-        logger.info("Data storage completed successfully!")
-        logger.info(f"Summary: {results}")
+        logging.info("Data storage completed successfully!")
+        logging.info(f"Summary: {results}")
         
         return results
         
     except Exception as e:
-        logger.error(f"Error during data storage: {e}")
+        logging.error(f"Error during data storage: {e}")
         raise
     finally:
         if close_connection and conn:
             conn.close()
-            logger.info("Database connection closed")
+            logging.info("Database connection closed")
 
 
 def main():
@@ -491,7 +485,7 @@ def main():
             print(f"{table}: {count} records inserted")
         print("============================\n")
     except Exception as e:
-        logger.error(f"Failed to store data: {e}")
+        logging.error(f"Failed to store data: {e}")
         raise
 
 
