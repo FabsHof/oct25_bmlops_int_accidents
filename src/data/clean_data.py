@@ -20,6 +20,17 @@ from src.utils.database import get_db_connection
 load_dotenv()
 
 
+# Data columns used for comparison in SCD Type 2 logic
+# These match the clean_data table schema, excluding metadata fields
+# (record_id, created_at, updated_at, is_current, valid_from, valid_to)
+COMPARISON_COLUMNS = [
+    'year', 'month', 'hour', 'minute', 'user_category', 
+    'severity', 'sex', 'year_of_birth', 'trip_purpose', 'security', 
+    'luminosity', 'weather', 'type_of_road', 'road_surface', 
+    'latitude', 'longitude', 'holiday'
+]
+
+
 def load_raw_data_from_db(conn: connection) -> Dict[str, pd.DataFrame]:
     """
     Load raw data from database tables into pandas DataFrames.
@@ -440,15 +451,7 @@ def records_are_equal(existing: dict, new: pd.Series) -> bool:
     Returns:
         True if records are identical, False otherwise
     """
-    # Compare all data columns (excluding metadata like record_id, timestamps, etc.)
-    comparison_columns = [
-        'year', 'month', 'hour', 'minute', 'user_category', 
-        'severity', 'sex', 'year_of_birth', 'trip_purpose', 'security', 
-        'luminosity', 'weather', 'type_of_road', 'road_surface', 
-        'latitude', 'longitude', 'holiday'
-    ]
-    
-    for col in comparison_columns:
+    for col in COMPARISON_COLUMNS:
         existing_val = existing.get(col)
         new_val = new.get(col)
         
