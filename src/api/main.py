@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import APIKeyQuery
-from typing import Optional
 
 from src.data.ingest_data import (
     load_next_chunk,
