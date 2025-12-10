@@ -114,3 +114,5 @@ CREATE TABLE IF NOT EXISTS clean_data (
     valid_to TIMESTAMP,
     FOREIGN KEY (num_acc) REFERENCES raw_caracteristics(num_acc)
 );
+CREATE INDEX IF NOT EXISTS idx_clean_data_numacc_userid_current
+    ON clean_data (num_acc, raw_user_id, is_current);
