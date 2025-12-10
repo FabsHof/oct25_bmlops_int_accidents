@@ -412,11 +412,35 @@ def test_transform_data_integration(clear_existing, monkeypatch):
             'holidays': pd.DataFrame({'id': [1], 'ds': ['2020-01-01'], 'holiday': ['New Year']})
         }
         
+        # Mock insert_preprocessed_data to return predictable counts
+        mock_insert_result = {
+            'inserted': 2,
+            'updated': 0,
+            'unchanged': 0
+        }
+        
         with patch('src.data.clean_data.load_raw_data_from_db', return_value=sample_data):
-            from src.data.clean_data import transform_data
-            
-            result = transform_data(clear_existing=clear_existing)
-            
-            # Verify result structure
-            assert isinstance(result, dict)
-            assert 'success' in result
+            with patch('src.data.clean_data.insert_preprocessed_data', return_value=mock_insert_result):
+                with patch('src.data.clean_data.clear_preprocessed_data'):
+                    from src.data.clean_data import transform_data
+                    
+                    result = transform_data(clear_existing=clear_existing)
+                    
+                    # Verify result structure and values
+                    assert isinstance(result, dict)
+                    
+                    # Assert all expected keys are present
+                    assert 'success' in result
+                    assert 'rows_processed' in result
+                    assert 'rows_inserted' in result
+                    assert 'rows_updated' in result
+                    assert 'rows_unchanged' in result
+                    assert 'message' in result
+                    
+                    # Assert values match expectations
+                    assert result['success'] is True
+                    assert result['rows_processed'] == 2  # 2 rows in sample data
+                    assert result['rows_inserted'] == 2
+                    assert result['rows_updated'] == 0
+                    assert result['rows_unchanged'] == 0
+                    assert result['message'] == 'Data transformation completed successfully'
