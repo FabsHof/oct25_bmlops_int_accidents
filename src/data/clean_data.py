@@ -313,8 +313,10 @@ def add_holiday_column(df: pd.DataFrame, holidays_df: pd.DataFrame) -> pd.DataFr
             # Count matches
             holiday_count = df['holiday'].sum()
             total_count = len(df)
-            logging.info(f"Matched {holiday_count} accidents ({holiday_count/total_count*100:.2f}%) to holidays")
-            
+            if total_count > 0:
+                logging.info(f"Matched {holiday_count} accidents ({holiday_count/total_count*100:.2f}%) to holidays")
+            else:
+                logging.info("No accidents to match to holidays (0 rows in dataframe)")
             # Drop temporary date column
             df = df.drop(columns=['accident_date'])
             
