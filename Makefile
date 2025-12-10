@@ -14,8 +14,13 @@ ingest_data_chunked:
 	@echo ">>> Starting 'ingest_data_chunked' task"
 	@python -m src.data.ingest_data --mode chunked
 	@echo ">>> 'ingest_data_chunked' task completed"
+clean_data:
+	@echo ">>> Starting 'clean_data' task"
+	@python -m src.data.clean_data
+	@echo ">>> 'clean_data' task completed"
 
-do_etl: download_data transform_data ingest_data_full
+do_etl_full: download_data ingest_data_full clean_data
+do_etl_chunked: download_data ingest_data_chunked clean_data
 
 api_dev:
 	uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload

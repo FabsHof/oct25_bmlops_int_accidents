@@ -93,3 +93,20 @@ python -m src.data.ingest_data --mode chunked --chunk-size 10000
    ```bash
    curl -H "X-API-Key: YOUR_API_KEY" "http://localhost:8000/data/progress"
    ```
+
+## 🧼 Data Cleaning
+
+Data cleaning is performed during the transformation step. To run data transformation, use:
+```bash
+make clean_data
+```
+Internally, SCD Type 2 logic is applied to maintain historical records of changes in the data.
+
+## 🪈 ETL Pipeline
+
+The ETL pipeline can be executed using the following commands:
+
+```bash
+make do_etl_full  # Ingest full data
+make do_etl_chunked  # Ingest next data chunk
+```
