@@ -1,0 +1,15 @@
+services:
+  accidents_db:
+    build:
+      context: .
+      dockerfile: Dockerfile.accidents_db
+    container_name: db_container
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_HOST_PORT}:${POSTGRES_CONT_PORT}"
+    volumes:
+      - accidents_db_data:/var/lib/postgresql
+volumes:
+  accidents_db_data:
