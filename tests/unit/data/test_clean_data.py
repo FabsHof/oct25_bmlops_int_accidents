@@ -378,45 +378,70 @@ def test_transform_data_integration(clear_existing, monkeypatch):
     mock_cursor = MagicMock()
     mock_conn.cursor.return_value = mock_cursor
     
-    # Mock get_db_connection
-    with patch('src.data.clean_data.get_db_connection', return_value=mock_conn):
-        # Mock load_raw_data_from_db to return sample data
-        sample_data = {
-            'caracteristics': pd.DataFrame({
-                'num_acc': [1, 2],
-                'an': [2020, 2020],
-                'mois': [1, 2],
-                'hrmn': [1430, 715],
-                'lum': [1, 2],
-                'atm': [1, 1],
-                'gps': ['M', 'M'],
-                'lat': [4883000, 4880000],
-                'long': ['233000', '230000']
-            }),
-            'places': pd.DataFrame({
-                'num_acc': [1, 2],
-                'catr': [1, 2],
-                'surf': [1, 1]
-            }),
-            'users': pd.DataFrame({
-                'user_id': [1, 2],
-                'num_acc': [1, 2],
-                'catu': [1, 2],
-                'grav': [1, 2],
-                'sexe': [1, 2],
-                'an_nais': [1985, 1990],
-                'trajet': [1, 2],
-                'secu': [1, 2]
-            }),
-            'vehicles': pd.DataFrame({'num_acc': [1, 2]}),
-            'holidays': pd.DataFrame({'id': [1], 'ds': ['2020-01-01'], 'holiday': ['New Year']})
-        }
+    # Mock load_raw_data_from_db to return sample data
+    sample_data = {
+        'caracteristics': pd.DataFrame({
+            'num_acc': [1, 2],
+            'an': [2020, 2020],
+            'mois': [1, 2],
+            'hrmn': [1430, 715],
+            'lum': [1, 2],
+            'atm': [1, 1],
+            'gps': ['M', 'M'],
+            'lat': [4883000, 4880000],
+            'long': ['233000', '230000']
+        }),
+        'places': pd.DataFrame({
+            'num_acc': [1, 2],
+            'catr': [1, 2],
+            'surf': [1, 1]
+        }),
+        'users': pd.DataFrame({
+            'user_id': [1, 2],
+            'num_acc': [1, 2],
+            'catu': [1, 2],
+            'grav': [1, 2],
+            'sexe': [1, 2],
+            'an_nais': [1985, 1990],
+            'trajet': [1, 2],
+            'secu': [1, 2]
+        }),
+        'vehicles': pd.DataFrame({'num_acc': [1, 2]}),
+        'holidays': pd.DataFrame({'id': [1], 'ds': ['2020-01-01'], 'holiday': ['New Year']})
+    }
+    
+    # Mock insert_preprocessed_data to return predictable counts
+    mock_insert_result = {
+        'inserted': 2,
+        'updated': 0,
+        'unchanged': 0
+    }
+    
+    # Use patch.multiple to reduce nesting
+    with patch.multiple('src.data.clean_data',
+                        get_db_connection=MagicMock(return_value=mock_conn),
+                        load_raw_data_from_db=MagicMock(return_value=sample_data),
+                        insert_preprocessed_data=MagicMock(return_value=mock_insert_result),
+                        clear_preprocessed_data=MagicMock()):
+        from src.data.clean_data import transform_data
         
-        with patch('src.data.clean_data.load_raw_data_from_db', return_value=sample_data):
-            from src.data.clean_data import transform_data
-            
-            result = transform_data(clear_existing=clear_existing)
-            
-            # Verify result structure
-            assert isinstance(result, dict)
-            assert 'success' in result
+        result = transform_data(clear_existing=clear_existing)
+        
+        # Verify result structure and values
+        assert isinstance(result, dict)
+        
+        # Assert all expected keys are present
+        assert 'success' in result
+        assert 'rows_processed' in result
+        assert 'rows_inserted' in result
+        assert 'rows_updated' in result
+        assert 'rows_unchanged' in result
+        assert 'message' in result
+        
+        # Assert values match expectations
+        assert result['success'] is True
+        assert result['rows_processed'] == 2  # 2 rows in sample data
+        assert result['rows_inserted'] == 2
+        assert result['rows_updated'] == 0
+        assert result['rows_unchanged'] == 0
+        assert result['message'] == 'Data transformation completed successfully'
