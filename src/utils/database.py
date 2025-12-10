@@ -75,10 +75,12 @@ def initialize_progress_tracking(conn: connection, csv_dir: Path, chunk_size: in
             if csv_path.exists():
                 # Get total row count (excluding header) with encoding fallback
                 try:
-                    total_rows = sum(1 for _ in open(csv_path, encoding='utf-8')) - 1
+                    with open(csv_path, encoding='utf-8') as f:
+                        total_rows = sum(1 for _ in f) - 1
                 except UnicodeDecodeError:
                     logging.warning(f"Failed to read {csv_path.name} with utf-8, trying latin-1")
-                    total_rows = sum(1 for _ in open(csv_path, encoding='latin-1')) - 1
+                    with open(csv_path, encoding='latin-1') as f:
+                        total_rows = sum(1 for _ in f) - 1
                 
                 cursor.execute("""
                     INSERT INTO data_ingestion_progress 
