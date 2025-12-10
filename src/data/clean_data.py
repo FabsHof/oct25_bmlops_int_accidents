@@ -105,8 +105,11 @@ def filter_metropolitan_areas(df: pd.DataFrame) -> pd.DataFrame:
     df_filtered = df[df['gps'] == 'M'].copy()
     
     filtered_count = len(df_filtered)
-    logging.info(f"Filtered from {initial_count} to {filtered_count} rows ({filtered_count/initial_count*100:.1f}%)")
-    
+    if initial_count > 0:
+        percent = filtered_count / initial_count * 100
+        logging.info(f"Filtered from {initial_count} to {filtered_count} rows ({percent:.1f}%)")
+    else:
+        logging.info(f"Filtered from {initial_count} to {filtered_count} rows (N/A%)")
     return df_filtered
 
 
