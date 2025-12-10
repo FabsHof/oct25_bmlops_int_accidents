@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch, Mock, call
+from unittest.mock import MagicMock, patch
 import pytest
 import pandas as pd
 import psycopg2
