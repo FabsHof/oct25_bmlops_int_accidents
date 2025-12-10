@@ -9,6 +9,8 @@ dependencies = [
     "joblib>=1.5.2",
     "kagglehub>=0.3.13",
     "pandas>=2.3.3",
+    "psycopg2-binary>=2.9.10",
+    "python-dotenv>=1.0.0",
     "scikit-learn>=1.7.2",
     "uvicorn>=0.38.0",
 ]

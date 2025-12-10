@@ -47,6 +47,7 @@ The project is structured as follows:
    ```bash
    uv sync
    ```
+5. Create and update environment variables in `.env` file as needed (see `.env.example`).
 
 ## ⌨️ Development
 
