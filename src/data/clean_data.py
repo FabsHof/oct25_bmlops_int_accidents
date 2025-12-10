@@ -5,7 +5,6 @@ This module loads data from raw database tables, performs cleaning operations,
 and stores the processed data in the preprocessed_data table.
 """
 
-import os
 from typing import Optional, Dict, Any
 import pandas as pd
 import numpy as np
