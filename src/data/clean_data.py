@@ -12,6 +12,8 @@ from psycopg2.extensions import connection
 from psycopg2.extras import execute_batch
 from dotenv import load_dotenv
 import argparse
+from sklearn.model_selection import train_test_split
+
 
 from src.utils import logging
 from src.utils.database import get_db_connection
@@ -682,9 +684,6 @@ def assign_dataset_splits(conn: connection, train_ratio: float = 0.6,
     
     # Initialize split column
     df['dataset_split'] = None
-    
-    # Perform stratified split by severity
-    from sklearn.model_selection import train_test_split
     
     # First split: train vs (validation + test)
     train_indices, temp_indices = train_test_split(

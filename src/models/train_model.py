@@ -16,7 +16,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
 import pandas as pd
-import numpy as np
 import joblib
 import argparse
 
@@ -25,8 +24,7 @@ from sklearn.metrics import (
     accuracy_score, 
     precision_recall_fscore_support,
     roc_auc_score,
-    confusion_matrix,
-    classification_report
+    confusion_matrix
 )
 
 from src.utils import logging
@@ -36,8 +34,7 @@ from src.models.config import (
     MODEL_CONFIG,
     VALIDATION_CONFIG,
     METRICS_CONFIG,
-    PERSISTENCE_CONFIG,
-    LOGGING_CONFIG
+    PERSISTENCE_CONFIG
 )
 
 
@@ -72,7 +69,6 @@ def load_training_data(conn, dataset_split: str = 'train') -> pd.DataFrame:
             logging.info(f"  {class_name} (severity={severity}): {count} ({count/len(df)*100:.1f}%)")
     
     return df
-
 
 def prepare_features_and_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     """
