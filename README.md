@@ -91,10 +91,5 @@ python -m src.data.ingest_data --mode chunked --chunk-size 10000
 
 2. Check ingestion progress:
    ```bash
-   curl "http://localhost:8000/data/progress?api_key=YOUR_API_KEY"
-   ```
-
-3. Load the next chunk of data:
-   ```bash
-   curl -X POST "http://localhost:8000/data/ingest-chunk?api_key=YOUR_API_KEY"
+   curl -H "X-API-Key: YOUR_API_KEY" "http://localhost:8000/data/progress"
    ```
