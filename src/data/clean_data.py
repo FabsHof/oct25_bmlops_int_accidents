@@ -5,7 +5,7 @@ This module loads data from raw database tables, performs cleaning operations,
 and stores the processed data in the preprocessed_data table.
 """
 
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 import pandas as pd
 import numpy as np
 from psycopg2.extensions import connection
