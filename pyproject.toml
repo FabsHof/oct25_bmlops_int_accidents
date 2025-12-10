@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.121.3",
+    "httpx>=0.28.1",
     "joblib>=1.5.2",
     "kagglehub>=0.3.13",
     "pandas>=2.3.3",

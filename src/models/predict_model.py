@@ -7,6 +7,7 @@ using a trained Random Forest Classifier. It includes:
 - Input validation and feature alignment
 - Prediction with probability scores
 - Result formatting with human-readable labels
+- Automatic best model selection
 """
 
 import json
@@ -16,8 +17,77 @@ from typing import Dict, Any, List, Union, Optional
 import pandas as pd
 import joblib
 import numpy as np
+import os
 
 from src.utils import logging
+
+
+def get_best_model_dir(models_base_dir: Union[str, Path] = "models") -> Optional[Path]:
+    """
+    Find the best model directory based on validation metrics.
+    
+    This function scans the models directory for trained models and selects
+    the best one based on validation accuracy. If multiple models have the
+    same accuracy, the most recent one is selected.
+    
+    Args:
+        models_base_dir: Base directory containing model subdirectories
+        
+    Returns:
+        Path to the best model directory, or None if no models found
+        
+    Raises:
+        FileNotFoundError: If models directory doesn't exist
+    """
+    models_path = Path(models_base_dir)
+    
+    if not models_path.exists():
+        raise FileNotFoundError(f"Models directory not found: {models_base_dir}")
+    
+    # Find all model directories (exclude .gitkeep and other files)
+    model_dirs = [d for d in models_path.iterdir() if d.is_dir() and not d.name.startswith('.')]
+    
+    if not model_dirs:
+        logging.warning(f"No model directories found in {models_base_dir}")
+        return None
+    
+    best_model_dir = None
+    best_score = -1
+    best_timestamp = None
+    
+    for model_dir in model_dirs:
+        metrics_file = model_dir / 'metrics.json'
+        
+        if not metrics_file.exists():
+            logging.warning(f"Metrics file not found for model: {model_dir.name}")
+            continue
+        
+        try:
+            with open(metrics_file, 'r') as f:
+                metrics = json.load(f)
+            
+            # Get validation accuracy (primary metric)
+            val_accuracy = metrics.get('validation', {}).get('accuracy', 0)
+            
+            # Get timestamp for tie-breaking
+            timestamp = metrics.get('timestamp', '')
+            
+            # Select best model (highest accuracy, or most recent if tied)
+            if val_accuracy > best_score or (val_accuracy == best_score and timestamp > best_timestamp):
+                best_score = val_accuracy
+                best_timestamp = timestamp
+                best_model_dir = model_dir
+                
+        except Exception as e:
+            logging.warning(f"Error reading metrics for {model_dir.name}: {e}")
+            continue
+    
+    if best_model_dir:
+        logging.info(f"Best model selected: {best_model_dir.name} (validation accuracy: {best_score:.4f})")
+    else:
+        logging.warning("No valid models found with metrics")
+    
+    return best_model_dir
 
 
 class AccidentSeverityPredictor:
