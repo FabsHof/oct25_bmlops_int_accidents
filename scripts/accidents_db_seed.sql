@@ -1,7 +1,10 @@
-CREATE DATABASE accidents_db;
+-- Make sure the database does not already exist, then create it and connect to it
+SELECT 'CREATE DATABASE accidents_db'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'accidents_db')\gexec
 \c accidents_db;
-CREATE TABLE raw_caracteristics (
-    num_acc INTEGER PRIMARY KEY, --would SERIAL be better? the num_acc are already defined
+-- ============================================================
+CREATE TABLE IF NOT EXISTS raw_caracteristics (
+    num_acc INTEGER PRIMARY KEY,
     an INTEGER,
     mois INTEGER,
     jour INTEGER,
@@ -18,11 +21,12 @@ CREATE TABLE raw_caracteristics (
     long INTEGER,
     dep INTEGER
 );
-CREATE TABLE raw_holidays (
-    ds DATE PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS raw_holidays (
+    id SERIAL PRIMARY KEY,
+    ds DATE,
     holiday VARCHAR
 );
-CREATE TABLE raw_places (
+CREATE TABLE IF NOT EXISTS raw_places (
     num_acc INTEGER PRIMARY KEY,
     catr INTEGER,
     voie INTEGER,
@@ -43,7 +47,7 @@ CREATE TABLE raw_places (
     env1 INTEGER,
     FOREIGN KEY (num_acc) REFERENCES raw_caracteristics(num_acc)
 );
-CREATE TABLE raw_users (
+CREATE TABLE IF NOT EXISTS raw_users (
     user_id SERIAL PRIMARY KEY,
     num_acc INTEGER,
     place INTEGER,
@@ -59,7 +63,7 @@ CREATE TABLE raw_users (
     num_veh VARCHAR,
     FOREIGN KEY (num_acc) REFERENCES raw_caracteristics(num_acc)
 );
-CREATE TABLE raw_vehicles (
+CREATE TABLE IF NOT EXISTS raw_vehicles (
     num_acc INTEGER,
     senc INTEGER,
     catv INTEGER,
@@ -72,7 +76,7 @@ CREATE TABLE raw_vehicles (
     PRIMARY KEY (num_acc, num_veh),
     FOREIGN KEY (num_acc) REFERENCES raw_caracteristics(num_acc)
 );
-CREATE TABLE preprocessed_data (
+CREATE TABLE IF NOT EXISTS preprocessed_data (
     user_id SERIAL PRIMARY KEY,
     num_acc INTEGER,
     year_ INTEGER,

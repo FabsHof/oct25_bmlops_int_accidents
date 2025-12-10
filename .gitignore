@@ -148,7 +148,7 @@ activemq-data/
 *.sage.py
 
 # Environments
-# .env # Temporarily commented to commit because variable list was modified.
+.env
 .envrc
 .venv
 env/
