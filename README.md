@@ -60,3 +60,41 @@ The project is structured as follows:
    make api_dev
     ```
 3. Access the API documentation at `http://localhost:8000/docs` (find e.g. the API key in the `.env` file, set it via the "Authorize" button in the Swagger UI).
+
+## 📊 Data Ingestion
+
+This project supports two modes of data ingestion:
+
+### Full Batch Loading
+Load all data at once using the traditional ETL process:
+```bash
+make do_etl
+```
+
+### Chunked/Incremental Loading
+Load data in chunks to simulate data evolution over time. This is useful for testing incremental model training and monitoring data arrival patterns.
+
+- **Using Makefile:**
+```bash
+make ingest_data_chunked
+```
+- **Using the script directly:**
+```bash
+python -m src.data.ingest_data --mode chunked --chunk-size 10000
+```
+- **Using the API:**
+
+1. Start the API server:
+   ```bash
+   make api_dev
+   ```
+
+2. Check ingestion progress:
+   ```bash
+   curl "http://localhost:8000/data/progress?api_key=YOUR_API_KEY"
+   ```
+
+3. Load the next chunk of data:
+   ```bash
+   curl -X POST "http://localhost:8000/data/ingest-chunk?api_key=YOUR_API_KEY"
+   ```

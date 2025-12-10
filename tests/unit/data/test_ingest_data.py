@@ -5,7 +5,7 @@ import pytest
 import pandas as pd
 import psycopg2
 
-from src.data.store_data import (
+from src.data.ingest_data import (
     get_db_connection,
     find_latest_csv_directory,
     load_csv_to_dataframe,
@@ -14,7 +14,8 @@ from src.data.store_data import (
     store_places,
     store_users,
     store_vehicles,
-    store_data
+    ingest_data_full,
+    ingest_data_chunk
 )
 
 
@@ -329,11 +330,11 @@ class TestStoreVehicles:
         mock_conn.commit.assert_called_once()
 
 
-class TestStoreData:
-    """Test suite for store_data function."""
+class TestIngestDataFull:
+    """Test suite for ingest_data_full function."""
 
-    def test_store_data_success(self, tmp_path):
-        """Test the complete store_data workflow."""
+    def test_ingest_data_full_success(self, tmp_path):
+        """Test the complete ingest_data_full workflow."""
         # Create test CSV directory structure
         date_dir = tmp_path / '20251121_1318'
         csv_dir = date_dir / '2'
@@ -366,7 +367,7 @@ class TestStoreData:
         mock_cursor.mogrify = MagicMock(return_value=b"INSERT INTO ...")
         mock_conn.cursor.return_value = mock_cursor
 
-        result = store_data(
+        result = ingest_data_full(
             raw_data_path=str(tmp_path),
             db_connection=mock_conn
         )
@@ -379,7 +380,7 @@ class TestStoreData:
         assert result['caracteristics'] >= 0
         mock_conn.commit.call_count >= 5  # At least one commit per table
 
-    def test_store_data_missing_csv_files(self, tmp_path):
+    def test_ingest_data_full_missing_csv_files(self, tmp_path):
         """Test when CSV files are missing."""
         date_dir = tmp_path / '20251121_1318'
         csv_dir = date_dir / '2'
@@ -391,17 +392,122 @@ class TestStoreData:
         mock_conn = MagicMock()
 
         with pytest.raises(ValueError, match="Missing CSV files"):
-            store_data(raw_data_path=str(tmp_path), db_connection=mock_conn)
+            ingest_data_full(raw_data_path=str(tmp_path), db_connection=mock_conn)
 
-    def test_store_data_no_csv_directory(self, tmp_path):
+    def test_ingest_data_full_no_csv_directory(self, tmp_path):
         """Test when no CSV directory is found."""
         mock_conn = MagicMock()
 
         with pytest.raises(ValueError, match="No CSV files found"):
-            store_data(raw_data_path=str(tmp_path), db_connection=mock_conn)
+            ingest_data_full(raw_data_path=str(tmp_path), db_connection=mock_conn)
 
-    def test_store_data_empty_raw_data_path(self):
+    def test_ingest_data_full_empty_raw_data_path(self):
         """Test with empty raw_data_path."""
         with patch.dict(os.environ, {'DATA_RAW_PATH': ''}):
             with pytest.raises(ValueError, match="raw_data_path must be provided"):
-                store_data(raw_data_path='')
+                ingest_data_full(raw_data_path='')
+
+class TestLoadNextChunk:
+    """Test suite for ingest_data_chunk function."""
+
+    def test_load_next_chunk_success(self, tmp_path):
+        """Test the complete ingest_data_chunk workflow."""
+        # Create test CSV directory structure
+        date_dir = tmp_path / '20251121_1318'
+        csv_dir = date_dir / '2'
+        csv_dir.mkdir(parents=True)
+
+        # Create minimal test CSV files
+        (csv_dir / 'caracteristics.csv').write_text(
+            'Num_Acc,an,mois,jour,hrmn,lum,agg,int,atm,col,com,adr,gps,lat,long,dep\n'
+            '201600000001,2016,1,1,1200,1,1,1,1,1,75001,Rue A,M,48000000,2000000,75\n'
+        )
+        (csv_dir / 'holidays.csv').write_text(
+            'ds,holiday\n2016-01-01,New Year\n'
+        )
+        (csv_dir / 'places.csv').write_text(
+            'Num_Acc,catr,voie,v1,v2,circ,nbv,pr,pr1,vosp,prof,plan,lartpc,larrout,surf,infra,situ,env1\n'
+            '201600000001,1,1,1,A,1,2,100,0,1,1,1,10,7,1,0,1,1\n'
+        )
+        (csv_dir / 'users.csv').write_text(
+            'Num_Acc,place,catu,grav,sexe,trajet,secu,locp,actp,etatp,an_nais,num_veh\n'
+            '201600000001,1,1,1,2,0,11,0,0,0,1983,B02\n'
+        )
+        (csv_dir / 'vehicles.csv').write_text(
+            'Num_Acc,senc,catv,occutc,obs,obsm,choc,manv,num_veh\n'
+            '201600000001,1,7,1,0,0,1,0,A01\n'
+        )
+
+        # Mock database connection and operations
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.mogrify = MagicMock(return_value=b"INSERT INTO ...")
+        mock_cursor.fetchall.return_value = []  # No existing progress
+        mock_conn.cursor.return_value = mock_cursor
+
+        # Mock progress tracking to simulate initialized state
+        csv_dir_str = str(csv_dir)
+        mock_progress = {
+            'caracteristics': {
+                'table_name': 'caracteristics',
+                'csv_directory': csv_dir_str,
+                'total_rows': 1,
+                'rows_loaded': 0,
+                'chunk_size': 1000,
+                'is_complete': False,
+                'progress_percentage': 0.0
+            },
+            'holidays': {
+                'table_name': 'holidays',
+                'csv_directory': csv_dir_str,
+                'total_rows': 1,
+                'rows_loaded': 0,
+                'chunk_size': 1000,
+                'is_complete': False,
+                'progress_percentage': 0.0
+            },
+            'places': {
+                'table_name': 'places',
+                'csv_directory': csv_dir_str,
+                'total_rows': 1,
+                'rows_loaded': 0,
+                'chunk_size': 1000,
+                'is_complete': False,
+                'progress_percentage': 0.0
+            },
+            'users': {
+                'table_name': 'users',
+                'csv_directory': csv_dir_str,
+                'total_rows': 1,
+                'rows_loaded': 0,
+                'chunk_size': 1000,
+                'is_complete': False,
+                'progress_percentage': 0.0
+            },
+            'vehicles': {
+                'table_name': 'vehicles',
+                'csv_directory': csv_dir_str,
+                'total_rows': 1,
+                'rows_loaded': 0,
+                'chunk_size': 1000,
+                'is_complete': False,
+                'progress_percentage': 0.0
+            }
+        }
+
+        with patch('src.data.ingest_data.get_db_connection', return_value=mock_conn), \
+             patch('src.data.ingest_data.get_progress_status', return_value=mock_progress), \
+             patch('src.data.ingest_data.update_progress'), \
+             patch('src.data.ingest_data.initialize_progress_tracking'):
+            result = ingest_data_chunk(
+                raw_data_path=str(tmp_path),
+                db_connection=mock_conn
+            )
+        assert 'caracteristics' in result
+        assert 'holidays' in result
+        assert 'places' in result
+        assert 'users' in result
+        assert 'vehicles' in result
+        assert result['caracteristics'] >= 0
+        mock_conn.commit.call_count >= 5  # At least one commit per table
+

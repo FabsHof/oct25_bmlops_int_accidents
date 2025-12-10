@@ -76,6 +76,16 @@ CREATE TABLE IF NOT EXISTS raw_vehicles (
     PRIMARY KEY (num_acc, num_veh),
     FOREIGN KEY (num_acc) REFERENCES raw_caracteristics(num_acc)
 );
+CREATE TABLE IF NOT EXISTS data_ingestion_progress (
+    id SERIAL PRIMARY KEY,
+    table_name VARCHAR(50) UNIQUE NOT NULL,
+    rows_loaded INTEGER DEFAULT 0,
+    total_rows INTEGER DEFAULT 0,
+    chunk_size INTEGER DEFAULT 1000,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    csv_directory VARCHAR(255),
+    is_complete BOOLEAN DEFAULT FALSE
+);
 CREATE TABLE IF NOT EXISTS preprocessed_data (
     user_id SERIAL PRIMARY KEY,
     num_acc BIGINT,
