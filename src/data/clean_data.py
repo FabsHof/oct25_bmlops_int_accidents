@@ -191,7 +191,10 @@ def clean_missing_data(df: pd.DataFrame) -> pd.DataFrame:
     cleaned_count = len(df_cleaned)
     removed_count = initial_count - cleaned_count
     
-    logging.info(f"Removed {removed_count} rows with missing data ({removed_count/initial_count*100:.1f}%)")
+    if initial_count > 0:
+        logging.info(f"Removed {removed_count} rows with missing data ({removed_count/initial_count*100:.1f}%)")
+    else:
+        logging.info("No rows to remove (input DataFrame is empty)")
     logging.info(f"Remaining rows: {cleaned_count}")
     
     return df_cleaned
