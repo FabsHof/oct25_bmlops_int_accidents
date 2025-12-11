@@ -7,6 +7,7 @@ services:
     environment:
       POSTGRES_USER: ${ACCIDENTS_POSTGRES_USER}
       POSTGRES_PASSWORD: ${ACCIDENTS_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${ACCIDENTS_POSTGRES_DB}
     ports:
       - "${ACCIDENTS_POSTGRES_HOST_PORT}:${ACCIDENTS_POSTGRES_CONT_PORT}"
     volumes:
@@ -49,7 +50,7 @@ services:
       - minio_data:/data
     command: server /data --console-address ":${MINIO_CONSOLE_CONT_PORT}"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:${MINIO_CONT_PORT}/minio/health/live"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -67,13 +68,15 @@ services:
       - |
         mc alias set myminio "http://${MINIO_HOST}:${MINIO_CONT_PORT}" \
           "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"
-        mc mb --ignore-existing "myminio/${MINIO_BUCKET:-mlflow}"
+        mc mb --ignore-existing "myminio/${MINIO_BUCKET_NAME}"
     restart: "no"
     
     networks:
       - mlflow_network
   mlflow:
-    image: ghcr.io/mlflow/mlflow:${MLFLOW_VERSION}
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
     container_name: mlflow_container
     depends_on:
       mlflow_db:
@@ -95,6 +98,15 @@ services:
       # server configuration
       MLFLOW_HOST: ${MLFLOW_HOST}
       MLFLOW_PORT: ${MLFLOW_PORT}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mlflow server \
+          --backend-store-uri "$${MLFLOW_BACKEND_STORE_URI}" \
+          --artifacts-destination "$${MLFLOW_ARTIFACTS_DESTINATION}" \
+          --host "$${MLFLOW_HOST}" \
+          --port "$${MLFLOW_PORT}"
     ports:
       - "${MLFLOW_PORT}:${MLFLOW_PORT}"
     healthcheck:

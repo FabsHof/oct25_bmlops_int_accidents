@@ -54,19 +54,6 @@ MODEL_CONFIG = {
     'model_type': 'RandomForestClassifier',
     'model_name': 'accident_severity_rf',
     
-    # Random Forest hyperparameters
-    'hyperparameters': {
-        'n_estimators': 100,           # Number of trees in the forest
-        'max_depth': 20,                # Maximum depth of trees
-        'min_samples_split': 10,        # Minimum samples to split an internal node
-        'min_samples_leaf': 4,          # Minimum samples at a leaf node
-        'max_features': 'sqrt',         # Number of features to consider for best split
-        'bootstrap': True,              # Whether to use bootstrap samples
-        'class_weight': 'balanced',     # Handle class imbalance
-        'random_state': 42,             # For reproducibility
-        'n_jobs': -1,                   # Use all available cores
-        'verbose': 1                    # Print progress
-    },
     
     # Feature engineering
     'feature_engineering': {
