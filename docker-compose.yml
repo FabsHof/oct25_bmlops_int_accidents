@@ -9,11 +9,11 @@ services:
       POSTGRES_PASSWORD: ${ACCIDENTS_POSTGRES_PASSWORD}
       POSTGRES_DB: ${ACCIDENTS_POSTGRES_DB}
     ports:
-      - "${ACCIDENTS_POSTGRES_HOST_PORT}:${ACCIDENTS_POSTGRES_CONT_PORT}"
+      - "${ACCIDENTS_POSTGRES_PORT}:5432"
     volumes:
       - accidents_db_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${ACCIDENTS_POSTGRES_USER} -h ${ACCIDENTS_POSTGRES_HOST} -d ${ACCIDENTS_POSTGRES_DB} -p ${ACCIDENTS_POSTGRES_CONT_PORT}"]
+      test: ["CMD-SHELL", "pg_isready -U ${ACCIDENTS_POSTGRES_USER} -h localhost -d ${ACCIDENTS_POSTGRES_DB} -p 5432"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -27,11 +27,11 @@ services:
       POSTGRES_PASSWORD: ${MLFLOW_POSTGRES_PASSWORD}
       POSTGRES_DB: ${MLFLOW_POSTGRES_DB}
     ports:
-      - "${MLFLOW_POSTGRES_HOST_PORT}:${MLFLOW_POSTGRES_CONT_PORT}"
+      - "${MLFLOW_POSTGRES_PORT}:5432"
     volumes:
       - mlflow_db_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${MLFLOW_POSTGRES_USER} -h ${MLFLOW_POSTGRES_HOST} -d ${MLFLOW_POSTGRES_DB} -p ${MLFLOW_POSTGRES_CONT_PORT}"]
+      test: ["CMD-SHELL", "pg_isready -U ${MLFLOW_POSTGRES_USER} -h localhost -d ${MLFLOW_POSTGRES_DB} -p 5432"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -44,14 +44,12 @@ services:
   #   environment:
   #     MINIO_ROOT_USER: ${MINIO_ROOT_USER}
   #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-  #     MINIO_CONT_PORT: ${MINIO_CONT_PORT}
-  #     MINIO_CONSOLE_CONT_PORT: ${MINIO_CONSOLE_CONT_PORT}
   #   ports:
-  #     - "${MINIO_HOST_PORT}:${MINIO_CONT_PORT}"
-  #     - "${MINIO_CONSOLE_HOST_PORT}:${MINIO_CONSOLE_CONT_PORT}"
+  #     - "${MINIO_PORT}:9000"
+  #     - "${MINIO_CONSOLE_PORT}:9001"
   #   volumes:
   #     - minio_data:/data
-  #   command: server /data --console-address ":9001"
+  #   command: ["server", "/data", "--console-address", ":9001"]
   #   healthcheck:
   #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
   #     interval: 5s
@@ -65,15 +63,15 @@ services:
   #   depends_on:
   #     mlflow_minio:
   #       condition: service_healthy
-  #   entrypoint: >
-  #     /bin/sh -c "
-  #     /usr/bin/mc alias set myminio http://mlflow_minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
-  #     /usr/bin/mc mb myminio/${MINIO_BUCKET_NAME};
-  #     /usr/bin/mc policy set public myminio/${MINIO_BUCKET_NAME};
-  #     exit 0;
-  #     "
+  #   entrypoint:
+  #     - /bin/sh
+  #     - -c
+  #     - |
+  #       /usr/bin/mc alias set myminio http://mlflow_minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}
+  #       /usr/bin/mc mb myminio/${MINIO_BUCKET_NAME}
+  #       /usr/bin/mc policy set public myminio/${MINIO_BUCKET_NAME}
+  #       exit 0
   #   restart: "no"
-    
   #   networks:
   #     - mlflow_network
   mlflow:
@@ -93,26 +91,18 @@ services:
       MLFLOW_BACKEND_STORE_URI: ${MLFLOW_BACKEND_STORE_URI}
       # minIO (S3 compatible) artifact store configuration
       # MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
-      # MLFLOW_ARTIFACTS_DESTINATION: ${MLFLOW_ARTIFACTS_DESTINATION}
+      MLFLOW_ARTIFACTS_DESTINATION: ./acrtifacts
       # AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
       # AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
       # AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
       # MLFLOW_S3_IGNORE_TLS: "true"
-      MLFLOW_CONT_PORT: ${MLFLOW_CONT_PORT}
+      MLFLOW_PORT: ${MLFLOW_PORT}
           # --backend-store-uri "$$MLFLOW_BACKEND_STORE_URI" \
-    command:
-      - /bin/sh
-      - -c
-      - |
-        mlflow server \
-          --backend-store-uri ./mlflow_backend_store \
-          --artifacts-destination "$$MLFLOW_ARTIFACTS_DESTINATION" \
-          --host 0.0.0.0 \
-          --port $$MLFLOW_CONT_PORT
+    command: ["mlflow", "server", "--backend-store-uri", "${MLFLOW_BACKEND_STORE_URI}", "--artifacts-destination", "${MLFLOW_ARTIFACTS_DESTINATION}", "--host", "0.0.0.0", "--port", "5000"]
     ports:
-      - "${MLFLOW_HOST_PORT}:${MLFLOW_CONT_PORT}"
+      - "${MLFLOW_PORT}:5000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${MLFLOW_CONT_PORT}/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 10s
       timeout: 5s
       retries: 30
