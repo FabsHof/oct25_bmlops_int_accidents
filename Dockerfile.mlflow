@@ -1,4 +1,4 @@
 FROM ghcr.io/mlflow/mlflow:latest
 
-# Install PostgreSQL client libraries and Python driver
-RUN pip install --no-cache-dir psycopg2-binary
+# Install PostgreSQL client libraries, Python driver, and boto3 for S3/MinIO
+RUN pip install --no-cache-dir psycopg2-binary boto3
