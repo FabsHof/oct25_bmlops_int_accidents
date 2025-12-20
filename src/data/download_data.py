@@ -6,6 +6,7 @@ import kagglehub as kh
 
 from src.utils import logging
 
+import shutil
 
 def download_data(
     raw_data_path: str,
@@ -44,7 +45,11 @@ def download_data(
         raw_data_path = path.join(raw_data_path, timestamp)
     os.makedirs(raw_data_path, exist_ok=True)
     new_file_path = path.join(raw_data_path, os.path.basename(file_path))
-    os.rename(file_path, new_file_path)
+
+    if os.path.isdir(file_path):
+        shutil.copytree(file_path, new_file_path)
+    else:
+        shutil.copy2(file_path, new_file_path)
 
     logging.info('>>> Data saved to: %s', new_file_path)
     return new_file_path
