@@ -38,42 +38,46 @@ services:
     networks:
       - mlflow_network
     restart: always
-  # mlflow_minio:
-  #   image: minio/minio:latest
-  #   container_name: mlflow_minio_container
-  #   environment:
-  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-  #   ports:
-  #     - "${MINIO_PORT}:9000"
-  #     - "${MINIO_CONSOLE_PORT}:9001"
-  #   volumes:
-  #     - minio_data:/data
-  #   command: ["server", "/data", "--console-address", ":9001"]
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 20
-  #   networks:
-  #     - mlflow_network
-  # create_minio_bucket:
-  #   image: minio/mc:latest
-  #   container_name: create_minio_bucket_container
-  #   depends_on:
-  #     mlflow_minio:
-  #       condition: service_healthy
-  #   entrypoint:
-  #     - /bin/sh
-  #     - -c
-  #     - |
-  #       /usr/bin/mc alias set myminio http://mlflow_minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}
-  #       /usr/bin/mc mb myminio/${MINIO_BUCKET_NAME}
-  #       /usr/bin/mc policy set public myminio/${MINIO_BUCKET_NAME}
-  #       exit 0
-  #   restart: "no"
-  #   networks:
-  #     - mlflow_network
+  mlflow_minio:
+    image: minio/minio:latest
+    container_name: mlflow_minio_container
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    volumes:
+      - minio_data:/data
+    command: ["server", "/data", "--console-address", ":9001"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - mlflow_network
+  create_minio_bucket:
+    image: minio/mc:latest
+    container_name: create_minio_bucket_container
+    depends_on:
+      mlflow_minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sleep 5
+        mc alias set myminio http://mlflow_minio_container:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD
+        mc mb --ignore-existing myminio/$$MINIO_BUCKET_NAME
+        exit 0
+    restart: "no"
+    networks:
+      - mlflow_network
   mlflow:
     build:
       context: .
@@ -82,22 +86,18 @@ services:
     depends_on:
       mlflow_db:
         condition: service_healthy
-      # mlflow_minio:
-      #   condition: service_healthy
-      # create_minio_bucket:
-      #   condition: service_completed_successfully
+      mlflow_minio:
+        condition: service_healthy
+      create_minio_bucket:
+        condition: service_completed_successfully
     environment:
       # Backend store configuration
       MLFLOW_BACKEND_STORE_URI: ${MLFLOW_BACKEND_STORE_URI}
-      # minIO (S3 compatible) artifact store configuration
-      # MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
-      MLFLOW_ARTIFACTS_DESTINATION: ./acrtifacts
-      # AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-      # AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
-      # AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
-      # MLFLOW_S3_IGNORE_TLS: "true"
+      # MinIO (S3 compatible) artifact store configuration
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
       MLFLOW_PORT: ${MLFLOW_PORT}
-          # --backend-store-uri "$$MLFLOW_BACKEND_STORE_URI" \
     command: ["mlflow", "server", "--backend-store-uri", "${MLFLOW_BACKEND_STORE_URI}", "--artifacts-destination", "${MLFLOW_ARTIFACTS_DESTINATION}", "--host", "0.0.0.0", "--port", "5000"]
     ports:
       - "${MLFLOW_PORT}:5000"
@@ -111,7 +111,7 @@ services:
 volumes:
   accidents_db_data:
   mlflow_db_data:
-  # minio_data:
+  minio_data:
 networks:
   mlflow_network:
   data_network:
