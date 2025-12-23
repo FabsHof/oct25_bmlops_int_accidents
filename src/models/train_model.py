@@ -41,11 +41,21 @@ load_dotenv()
 
 def setup_mlflow() -> None:
     '''Set up MLflow tracking and experiment.'''
-    mlflow.set_tracking_uri(f'http://{os.getenv("MLFLOW_HOST", "localhost")}:{os.getenv("MLFLOW_PORT", "5000")}')
-    mlflow.set_experiment(MODEL_CONFIG['model_name'])
+    # Set tracking URI to point to MLflow server
+    tracking_uri = f'http://localhost:{os.getenv("MLFLOW_PORT", "5001")}'
+    mlflow.set_tracking_uri(tracking_uri)
+
+    # Configure S3/MinIO credentials for artifact storage (host machine uses localhost endpoint)
+    os.environ['AWS_ACCESS_KEY_ID'] = os.getenv('MINIO_ROOT_USER', 'minio_user')
+    os.environ['AWS_SECRET_ACCESS_KEY'] = os.getenv('MINIO_ROOT_PASSWORD', 'minio_password')
+    os.environ['MLFLOW_S3_ENDPOINT_URL'] = f'http://localhost:{os.getenv("MINIO_PORT", "9000")}'
+    os.environ['MLFLOW_S3_IGNORE_TLS'] = 'true'
+
+    mlflow.set_experiment('Car Accident Severity Prediction')
     # Disable signature and input example logging to avoid schema warnings
-    mlflow.sklearn.autolog(log_input_examples=False, log_model_signatures=False)
-    logging.info(f"MLflow tracking set up at {mlflow.get_tracking_uri()}")
+    mlflow.sklearn.autolog()
+    logging.info(f'MLflow tracking set up at {mlflow.get_tracking_uri()}')
+    logging.info(f'MLflow S3 endpoint: {os.environ["MLFLOW_S3_ENDPOINT_URL"]}')
 
 def load_training_data(conn, dataset_split: str = 'train') -> pd.DataFrame:
     """
@@ -277,7 +287,7 @@ def train_model() -> pd.DataFrame:
         mlflow.sklearn.log_model(model, name=model_name)
         model_uri = f'runs:/{mlflow.active_run().info.run_id}/{model_name}'
         logging.info(f"Model logged to MLflow with URI: {model_uri}")
-        mlflow.register_model(model_uri, model_name)
+        # mlflow.register_model(model_uri, model_name)
         
         # Compute feature importance
         feature_importance = compute_feature_importance(
@@ -295,9 +305,9 @@ def train_model() -> pd.DataFrame:
 
 
 def main():
-
+    print("Starting training script...")
     setup_mlflow()
-    
+
     try:
         result = train_model()
         logging.info(f"Training result: {result}")
