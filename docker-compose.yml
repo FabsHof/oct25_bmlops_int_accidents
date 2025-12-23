@@ -58,7 +58,10 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - mlflow_network
+      mlflow_network:
+        aliases:
+          - minio
+          - mlflow-minio
   mlflow:
     build:
       context: .
@@ -72,12 +75,17 @@ services:
     environment:
       # Backend store configuration
       MLFLOW_BACKEND_STORE_URI: ${MLFLOW_BACKEND_STORE_URI}
+      MLFLOW_TRACKING_URI: http://localhost:${MLFLOW_PORT}
       # MinIO (S3 compatible) artifact store configuration
-      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+      MLFLOW_ARTIFACTS_DESTINATION: ${MLFLOW_ARTIFACTS_DESTINATION}
+      MLFLOW_S3_IGNORE_TLS: "true"
+      AWS_S3_ADDRESSING_STYLE: path
+      AWS_ENDPOINT_URL_S3: ${MLFLOW_S3_ENDPOINT_URL}
       MLFLOW_PORT: ${MLFLOW_PORT}
-    command: ["mlflow", "server", "--backend-store-uri", "${MLFLOW_BACKEND_STORE_URI}", "--artifacts-destination", "${MLFLOW_ARTIFACTS_DESTINATION}", "--host", "0.0.0.0", "--port", "5000"]
+    command: ["mlflow", "server", "--backend-store-uri", "${MLFLOW_BACKEND_STORE_URI}", "--artifacts-destination", "${MLFLOW_ARTIFACTS_DESTINATION}", "--serve-artifacts", "--host", "0.0.0.0", "--port", "5000"]
     ports:
       - "${MLFLOW_PORT}:5000"
     healthcheck:
