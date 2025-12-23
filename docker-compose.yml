@@ -39,43 +39,24 @@ services:
       - mlflow_network
     restart: always
   mlflow_minio:
-    image: minio/minio:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.minio
     container_name: mlflow_minio_container
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
     ports:
       - "${MINIO_PORT}:9000"
       - "${MINIO_CONSOLE_PORT}:9001"
     volumes:
       - minio_data:/data
-    command: ["server", "/data", "--console-address", ":9001"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 3s
-      retries: 20
-    networks:
-      - mlflow_network
-  create_minio_bucket:
-    image: minio/mc:latest
-    container_name: create_minio_bucket_container
-    depends_on:
-      mlflow_minio:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        sleep 5
-        mc alias set myminio http://mlflow_minio_container:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD
-        mc mb --ignore-existing myminio/$$MINIO_BUCKET_NAME
-        exit 0
-    restart: "no"
+      retries: 10
     networks:
       - mlflow_network
   mlflow:
@@ -88,8 +69,6 @@ services:
         condition: service_healthy
       mlflow_minio:
         condition: service_healthy
-      create_minio_bucket:
-        condition: service_completed_successfully
     environment:
       # Backend store configuration
       MLFLOW_BACKEND_STORE_URI: ${MLFLOW_BACKEND_STORE_URI}
