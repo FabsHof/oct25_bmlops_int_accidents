@@ -53,7 +53,7 @@ def setup_mlflow() -> None:
 
     mlflow.set_experiment('Car Accident Severity Prediction')
     # Disable signature and input example logging to avoid schema warnings
-    mlflow.sklearn.autolog()
+    # mlflow.sklearn.autolog()
     logging.info(f'MLflow tracking set up at {mlflow.get_tracking_uri()}')
     logging.info(f'MLflow S3 endpoint: {os.environ["MLFLOW_S3_ENDPOINT_URL"]}')
 
@@ -123,7 +123,7 @@ def prepare_features_and_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Seri
     
     return X, y
 
-def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series) -> RandomForestClassifier:
+def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series) -> Tuple[RandomForestClassifier,mlflow.entities.model_registry.ModelVersion]:
     """
     Train Random Forest Classifier with hyperparameter tuning, using GridSearchCV.
     
@@ -132,7 +132,7 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.Dat
         y_train: Training targets
         
     Returns:
-        Trained Random Forest model and evaluation metrics for training and validation sets.
+        Tuple of (trained RandomForestClassifier, model information)
     """
     logging.info("Training Random Forest Classifier...")
     
@@ -144,27 +144,35 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.Dat
     model = RandomForestClassifier(random_state=42)
     grid_search = GridSearchCV(model, param_grid, cv=5, scoring="accuracy", n_jobs=-1)
     grid_search.fit(X_train, y_train)
-    # Log best parameters
-    mlflow.log_params(grid_search.best_params_)
+    
+    # Log best model
+    best_model = grid_search.best_estimator_
+    best_parameters = grid_search.best_params_
+    logging.info(f"Best model parameters: {best_parameters}")
+    mlflow.log_params(best_parameters)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_name = f'rf_model_{timestamp}'
+    model_info = mlflow.sklearn.log_model(best_model, model_name)
 
-    train_evaluation = evaluate_model(grid_search.best_estimator_, X_train, y_train, dataset_name='training')
+    train_evaluation = evaluate_model(best_model, X_train, y_train, dataset_prefix='train')
+    val_evaluation = evaluate_model(best_model, X_val, y_val, dataset_prefix='val')
+    
     logging.info(f"Training evaluation: {train_evaluation}")
     for key, value in train_evaluation.items():
         logging.info(f"Logging training metric {key}: {value}")
-        mlflow.log_metric(key, value, step=0)
+        mlflow.log_metric(f"train_{key}", value)
 
-    val_evaluation = evaluate_model(grid_search.best_estimator_, X_val, y_val, dataset_name='validation')
     logging.info(f"Validation evaluation: {val_evaluation}")
     for key, value in val_evaluation.items():
         logging.info(f"Logging validation metric {key}: {value}")
-        mlflow.log_metric(key, value, step=1)
+        mlflow.log_metric(f"val_{key}", value)
 
-    return grid_search.best_estimator_
+    return best_model, model_info
 
 def evaluate_model(model: RandomForestClassifier, 
                   X: pd.DataFrame, 
                   y: pd.Series, 
-                  dataset_name: str = 'validation') -> Dict[str, Any]:
+                  dataset_prefix: str = 'train') -> Dict[str, Any]:
     """
     Evaluate model on given dataset and compute all configured metrics.
     
@@ -172,12 +180,12 @@ def evaluate_model(model: RandomForestClassifier,
         model: Trained model
         X: Features
         y: True labels
-        dataset_name: Name of dataset for logging
+        dataset_prefix: Name of dataset for logging
         
     Returns:
         Dictionary containing all metrics
     """
-    logging.info(f"Evaluating model on {dataset_name} set...")
+    logging.info(f"Evaluating model on {dataset_prefix} set...")
     
     # Make predictions
     y_pred = model.predict(X)
@@ -218,7 +226,7 @@ def evaluate_model(model: RandomForestClassifier,
         metrics[f'class_{class_name}_support'] = int(support_per_class[idx])
         
     # Log metrics
-    logging.info(f"\n{dataset_name.upper()} SET METRICS:")
+    logging.info(f"\n{dataset_prefix.upper()} SET METRICS:")
     logging.info(f"  Accuracy: {metrics['accuracy']:.4f}")
     logging.info(f"  Precision (weighted): {metrics['precision_weighted']:.4f}")
     logging.info(f"  Recall (weighted): {metrics['recall_weighted']:.4f}")
@@ -228,31 +236,30 @@ def evaluate_model(model: RandomForestClassifier,
     
     return metrics
 
-
-def compute_feature_importance(model: RandomForestClassifier, 
-                               feature_names: list) -> pd.DataFrame:
-    """
-    Compute and return feature importance scores.
+# def compute_feature_importance(model: RandomForestClassifier, 
+#                                feature_names: list) -> pd.DataFrame:
+#     """
+#     Compute and return feature importance scores.
     
-    Args:
-        model: Trained Random Forest model
-        feature_names: List of feature names
+#     Args:
+#         model: Trained Random Forest model
+#         feature_names: List of feature names
         
-    Returns:
-        DataFrame with feature names and importance scores
-    """
-    logging.info("Computing feature importance...")
+#     Returns:
+#         DataFrame with feature names and importance scores
+#     """
+#     logging.info("Computing feature importance...")
     
-    importance_df = pd.DataFrame({
-        'feature': feature_names,
-        'importance': model.feature_importances_
-    }).sort_values('importance', ascending=False)
+#     importance_df = pd.DataFrame({
+#         'feature': feature_names,
+#         'importance': model.feature_importances_
+#     }).sort_values('importance', ascending=False)
     
-    logging.info("\nTop 10 most important features:")
-    for idx, row in importance_df.head(10).iterrows():
-        logging.info(f"  {row['feature']}: {row['importance']:.4f}")
+#     logging.info("\nTop 10 most important features:")
+#     for idx, row in importance_df.head(10).iterrows():
+#         logging.info(f"  {row['feature']}: {row['importance']:.4f}")
     
-    return importance_df
+#     return importance_df
 
 def train_model() -> pd.DataFrame:
     """
@@ -263,7 +270,7 @@ def train_model() -> pd.DataFrame:
         evaluate_test: Whether to evaluate on test set (default: False)
         
     Returns:
-        Dictionary with training results
+        
     """
     logging.info("="*80)
     logging.info("STARTING MODEL TRAINING PIPELINE")
@@ -271,38 +278,82 @@ def train_model() -> pd.DataFrame:
     
     # Connect to database
     conn = get_db_connection()
+    with get_db_connection() as conn:
     
-    try:
-        # Load data
-        train_df = load_training_data(conn, 'train')
-        val_df = load_training_data(conn, 'validation')
-        
-        # Prepare features and targets
-        X_train, y_train = prepare_features_and_target(train_df)
-        X_val, y_val = prepare_features_and_target(val_df)
-        
-        # Train model
-        model = train_random_forest(X_train, y_train, X_val, y_val)
-        model_name = 'random_forest_model'
-        mlflow.sklearn.log_model(model, name=model_name)
-        model_uri = f'runs:/{mlflow.active_run().info.run_id}/{model_name}'
-        logging.info(f"Model logged to MLflow with URI: {model_uri}")
-        # mlflow.register_model(model_uri, model_name)
-        
-        # Compute feature importance
-        feature_importance = compute_feature_importance(
-            model, 
-            DATASET_CONFIG['feature_columns']
-        )
+        try:
+            # Load data
+            train_df = load_training_data(conn, 'train')
+            val_df = load_training_data(conn, 'validation')
+            test_df = load_training_data(conn, 'test')
+            
+            # Prepare features and targets
+            X_train, y_train = prepare_features_and_target(train_df)
+            X_val, y_val = prepare_features_and_target(val_df)
+            X_test, y_test = prepare_features_and_target(test_df)
 
-        return feature_importance
-        
-    except Exception as e:
-        logging.error(f"Error during model training: {e}")
-        raise
-    finally:
-        conn.close()
+            # Log datasets to MLflow
+            train_dataset = mlflow.data.from_pandas(
+                pd.concat([X_train, y_train], axis=1),
+                source='accidents_db.clean_data',
+                name='Training Data',
+                targets=DATASET_CONFIG['target_column']
+            )
+            val_dataset = mlflow.data.from_pandas(
+                pd.concat([X_val, y_val], axis=1),
+                source='accidents_db.clean_data',
+                name='Validation Data',
+                targets=DATASET_CONFIG['target_column']
+            )
+            test_dataset = mlflow.data.from_pandas(
+                pd.concat([X_test, y_test], axis=1),
+                source='accidents_db.clean_data',
+                name='Test Data',
+                targets=DATASET_CONFIG['target_column']
+            )
+            
+            with mlflow.start_run() as run:
+                mlflow.log_inputs(
+                    datasets=[train_dataset, val_dataset, test_dataset], 
+                    contexts=['training', 'validation', 'test'],
+                    tags_list=[None, None, None]
+                    )
+                model, model_info = train_random_forest(X_train, y_train, X_val, y_val)
+                model_name = 'random_forest_model'
+                mlflow.sklearn.log_model(model, name=model_name)
+                logging.info(f"Model logged to MLflow with URI: runs:/{run.info.run_id}/{model_name}")
 
+                # Evaluate on test set
+                result = mlflow.models.evaluate(
+                    model_info.model_uri,
+                    test_dataset,
+                    model_type="classifier",
+                )
+                logging.info(f"MLflow model evaluation result: {result}")
+
+            # Query for the best model based on validation accuracy
+            best_model = mlflow.search_logged_models(
+                order_by=[{'field_name': 'metrics.val_accuracy', 'ascending': False}],
+                max_results=1,
+                output_format='pandas'
+            )
+
+            if not best_model.empty:
+                best_model_info = best_model.iloc[0]
+                logging.info(f"Best model found: Name={best_model_info.name}, Metrics={best_model_info.metrics}")
+                
+                # Register the best model
+                mlflow.register_model(
+                    model_uri=f"models:/best_{best_model_info.name}",
+                    name="Best_Accident_Severity_Random_Forest"
+                )
+                logging.info("Best model registered successfully.")
+            else:
+                logging.warning("No best model found based on validation accuracy.")
+
+        except Exception as e:
+            logging.error(f"Error during model training: {e}")
+            raise
+    logging.info("Model training pipeline completed successfully.")
 
 def main():
     print("Starting training script...")
