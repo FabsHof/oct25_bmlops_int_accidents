@@ -11,13 +11,9 @@ using a Random Forest Classifier. It includes:
 """
 
 import os
-import json
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple
 import pandas as pd
-import joblib
-import argparse
 import mlflow
 from dotenv import load_dotenv
 
@@ -31,13 +27,39 @@ from sklearn.model_selection import GridSearchCV
 
 from src.utils import logging
 from src.utils.database import get_db_connection
-from src.models.config import (
-    DATASET_CONFIG,
-    MODEL_CONFIG,
-    METRICS_CONFIG,
-)
 
 load_dotenv()
+
+
+# Mapping of severity levels to descriptive names
+CLASS_LABELS = {
+    1: 'Unscathed',
+    2: 'Light injury',
+    3: 'Hospitalized wounded',
+    4: 'Killed'
+}
+
+FEATURE_COLUMNS = [
+    'year',
+    'month',
+    'hour',
+    'minute',
+    'user_category',
+    'sex',
+    'year_of_birth',
+    'trip_purpose',
+    'security',
+    'luminosity',
+    'weather',
+    'type_of_road',
+    'road_surface',
+    'latitude',
+    'longitude',
+    'holiday'
+]
+TARGET_COLUMN = 'severity'
+HANDLE_MISSING = 'drop'  # Options: 'drop', 'impute'
+RANDOM_STATE = 42
 
 def setup_mlflow() -> None:
     '''Set up MLflow tracking and experiment.'''
@@ -52,8 +74,6 @@ def setup_mlflow() -> None:
     os.environ['MLFLOW_S3_IGNORE_TLS'] = 'true'
 
     mlflow.set_experiment('Car Accident Severity Prediction')
-    # Disable signature and input example logging to avoid schema warnings
-    # mlflow.sklearn.autolog()
     logging.info(f'MLflow tracking set up at {mlflow.get_tracking_uri()}')
     logging.info(f'MLflow S3 endpoint: {os.environ["MLFLOW_S3_ENDPOINT_URL"]}')
 
@@ -71,7 +91,7 @@ def load_training_data(conn, dataset_split: str = 'train') -> pd.DataFrame:
     logging.info(f"Loading {dataset_split} data from database...")
     
     query = f"""
-        SELECT {', '.join(DATASET_CONFIG['feature_columns'] + [DATASET_CONFIG['target_column']])}
+        SELECT {', '.join(FEATURE_COLUMNS + [TARGET_COLUMN])}
         FROM clean_data
         WHERE dataset_split = '{dataset_split}' AND is_current = TRUE
     """
@@ -80,11 +100,11 @@ def load_training_data(conn, dataset_split: str = 'train') -> pd.DataFrame:
     logging.info(f"Loaded {len(df)} records for {dataset_split} set")
     
     # Log class distribution
-    if DATASET_CONFIG['target_column'] in df.columns:
-        class_dist = df[DATASET_CONFIG['target_column']].value_counts().sort_index()
+    if TARGET_COLUMN in df.columns:
+        class_dist = df[TARGET_COLUMN].value_counts().sort_index()
         logging.info(f"{dataset_split} set class distribution:")
         for severity, count in class_dist.items():
-            class_name = METRICS_CONFIG['class_labels'].get(severity, f'Class {severity}')
+            class_name = CLASS_LABELS.get(severity, f'Class {severity}')
             logging.info(f"  {class_name} (severity={severity}): {count} ({count/len(df)*100:.1f}%)")
     
     return df
@@ -100,20 +120,20 @@ def prepare_features_and_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Seri
         Tuple of (features, target)
     """
     # Handle missing values
-    if DATASET_CONFIG['handle_missing'] == 'drop':
+    if HANDLE_MISSING == 'drop':
         df_clean = df.dropna()
         dropped = len(df) - len(df_clean)
         if dropped > 0:
             logging.warning(f"Dropped {dropped} rows with missing values ({dropped/len(df)*100:.1f}%)")
         df = df_clean
-    elif DATASET_CONFIG['handle_missing'] == 'impute':
+    elif HANDLE_MISSING == 'impute':
         # Simple imputation with median for numeric columns
         df = df.fillna(df.median())
         logging.info("Imputed missing values with median")
     
     # Separate features and target
-    X = df[DATASET_CONFIG['feature_columns']].copy()
-    y = df[DATASET_CONFIG['target_column']].copy()
+    X = df[FEATURE_COLUMNS].copy()
+    y = df[TARGET_COLUMN].copy()
     
     # Convert all features to float64 to handle missing values and avoid MLflow schema warnings
     X = X.astype('float64')
@@ -141,7 +161,7 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.Dat
         "max_depth": [5, 10, 15, None],
         "min_samples_split": [2, 5, 10],
     }
-    model = RandomForestClassifier(random_state=42)
+    model = RandomForestClassifier(random_state=RANDOM_STATE)
     grid_search = GridSearchCV(model, param_grid, cv=5, scoring="accuracy", n_jobs=-1)
     grid_search.fit(X_train, y_train)
     
@@ -219,7 +239,7 @@ def evaluate_model(model: RandomForestClassifier,
         precision_recall_fscore_support(y, y_pred, average=None, zero_division=0)
     
     for idx, severity in enumerate(sorted(y.unique())):
-        class_name = METRICS_CONFIG['class_labels'].get(severity, f'Class {severity}')
+        class_name = CLASS_LABELS.get(severity, f'Class {severity}')
         metrics[f'class_{class_name}_precision'] = float(precision_per_class[idx])
         metrics[f'class_{class_name}_recall'] = float(recall_per_class[idx])
         metrics[f'class_{class_name}_f1'] = float(f1_per_class[idx])
@@ -236,48 +256,18 @@ def evaluate_model(model: RandomForestClassifier,
     
     return metrics
 
-# def compute_feature_importance(model: RandomForestClassifier, 
-#                                feature_names: list) -> pd.DataFrame:
-#     """
-#     Compute and return feature importance scores.
-    
-#     Args:
-#         model: Trained Random Forest model
-#         feature_names: List of feature names
-        
-#     Returns:
-#         DataFrame with feature names and importance scores
-#     """
-#     logging.info("Computing feature importance...")
-    
-#     importance_df = pd.DataFrame({
-#         'feature': feature_names,
-#         'importance': model.feature_importances_
-#     }).sort_values('importance', ascending=False)
-    
-#     logging.info("\nTop 10 most important features:")
-#     for idx, row in importance_df.head(10).iterrows():
-#         logging.info(f"  {row['feature']}: {row['importance']:.4f}")
-    
-#     return importance_df
-
-def train_model() -> pd.DataFrame:
+def train_model() -> None:
     """
     Main training function that orchestrates the entire training pipeline.
     
-    Args:
-        version: Model version (auto-generated if None)
-        evaluate_test: Whether to evaluate on test set (default: False)
-        
-    Returns:
-        
+    Loads data from database, trains a Random Forest classifier with hyperparameter
+    tuning, evaluates on validation and test sets, and registers the best model
+    to MLflow.
     """
     logging.info("="*80)
     logging.info("STARTING MODEL TRAINING PIPELINE")
     logging.info("="*80)
     
-    # Connect to database
-    conn = get_db_connection()
     with get_db_connection() as conn:
     
         try:
@@ -296,19 +286,19 @@ def train_model() -> pd.DataFrame:
                 pd.concat([X_train, y_train], axis=1),
                 source='accidents_db.clean_data',
                 name='Training Data',
-                targets=DATASET_CONFIG['target_column']
+                targets=TARGET_COLUMN
             )
             val_dataset = mlflow.data.from_pandas(
                 pd.concat([X_val, y_val], axis=1),
                 source='accidents_db.clean_data',
                 name='Validation Data',
-                targets=DATASET_CONFIG['target_column']
+                targets=TARGET_COLUMN
             )
             test_dataset = mlflow.data.from_pandas(
                 pd.concat([X_test, y_test], axis=1),
                 source='accidents_db.clean_data',
                 name='Test Data',
-                targets=DATASET_CONFIG['target_column']
+                targets=TARGET_COLUMN
             )
             
             with mlflow.start_run() as run:
@@ -356,12 +346,13 @@ def train_model() -> pd.DataFrame:
     logging.info("Model training pipeline completed successfully.")
 
 def main():
-    print("Starting training script...")
+    """Entry point for the model training script."""
+    logging.info("Starting training script...")
     setup_mlflow()
 
     try:
-        result = train_model()
-        logging.info(f"Training result: {result}")
+        train_model()
+        logging.info("Training completed successfully.")
     except Exception as e:
         logging.error(f"Training failed: {e}")
         raise
