@@ -11,27 +11,27 @@ using a Random Forest Classifier. It includes:
 """
 
 import os
-from datetime import datetime
-from typing import Dict, Any, Tuple
+from typing import Tuple
 import pandas as pd
 import mlflow
 from dotenv import load_dotenv
-
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    accuracy_score, 
-    precision_recall_fscore_support,
-    roc_auc_score,
-)
 from sklearn.model_selection import GridSearchCV
 
 from src.utils import logging
 from src.utils.database import get_db_connection
+from src.models.metrics import (
+    weighted_f1_score_metric,
+    weighted_precision_metric,
+    weighted_recall_metric,
+    roc_auc_ovr_metric,
+    per_class_f1_metric
+)
 
 load_dotenv()
 
 # ########### Configuration ###########
-BEST_MODEL_METRIC = 'val_accuracy'  # Metric used to select the best model for registration
+BEST_MODEL_METRIC = 'weighted_f1_score'  # Metric used to select the best model for registration
 MODEL_NAME = 'random_forest_model'
 CHAMPION_MODEL_ALIAS = 'champion'
 
@@ -150,7 +150,7 @@ def prepare_features_and_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Seri
     
     return X, y
 
-def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series) -> mlflow.models.model.ModelInfo:
+def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series ) -> mlflow.models.model.ModelInfo:
     """
     Train Random Forest Classifier with hyperparameter tuning, using GridSearchCV.
     
@@ -176,6 +176,7 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.Dat
     tuned_random_forest = grid_search.best_estimator_
     best_parameters = grid_search.best_params_
     logging.info(f"Model parameters of tuned_random_forest: {best_parameters}")
+
     mlflow.log_params(best_parameters)
     model_info = mlflow.sklearn.log_model(
         tuned_random_forest, 
@@ -183,87 +184,36 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.Dat
         registered_model_name=MODEL_NAME
     )
 
-    train_evaluation = evaluate_model(tuned_random_forest, X_train, y_train, dataset_prefix='train')
-    val_evaluation = evaluate_model(tuned_random_forest, X_val, y_val, dataset_prefix='val')
-    
-    logging.info(f"Training evaluation: {train_evaluation}")
-    for key, value in train_evaluation.items():
-        logging.info(f"Logging training metric {key}: {value}")
-        mlflow.log_metric(f"train_{key}", value)
-
-    logging.info(f"Validation evaluation: {val_evaluation}")
-    for key, value in val_evaluation.items():
-        logging.info(f"Logging validation metric {key}: {value}")
-        mlflow.log_metric(f"val_{key}", value)
-
     return model_info
 
-def evaluate_model(model: RandomForestClassifier, 
-                  X: pd.DataFrame, 
-                  y: pd.Series, 
-                  dataset_prefix: str = 'train') -> Dict[str, Any]:
+def evaluate_model(model_uri: str, dataset: mlflow.data.Dataset, model_type: str = "classifier") -> mlflow.models.EvaluationResult:
     """
-    Evaluate model on given dataset and compute all configured metrics.
+    Evaluate a model on a given dataset with custom metrics.
     
     Args:
-        model: Trained model
-        X: Features
-        y: True labels
-        dataset_prefix: Name of dataset for logging
+        model_uri: URI of the model to evaluate
+        dataset: MLflow dataset to evaluate on
+        model_type: Type of model (default: "classifier")
         
     Returns:
-        Dictionary containing all metrics
+        Evaluation result containing metrics
     """
-    logging.info(f"Evaluating model on {dataset_prefix} set...")
-    
-    # Make predictions
-    y_pred = model.predict(X)
-    y_pred_proba = model.predict_proba(X)
-    
-    # Compute primary metrics
-    metrics = {}
-    
-    # Accuracy
-    metrics['accuracy'] = accuracy_score(y, y_pred)
-    
-    # Precision, Recall, F1-score (weighted average)
-    precision, recall, f1, support = precision_recall_fscore_support(
-        y, y_pred, average='weighted', zero_division=0
+    return mlflow.models.evaluate(
+        model_uri,
+        dataset,
+        model_type=model_type,
+        evaluator_config={
+            'log_explainer': True,
+            'explainer_type': 'exact',
+        },
+        extra_metrics=[
+            weighted_f1_score_metric,
+            weighted_precision_metric,
+            weighted_recall_metric,
+            roc_auc_ovr_metric,
+            per_class_f1_metric
+        ]
     )
-    metrics['precision_weighted'] = precision
-    metrics['recall_weighted'] = recall
-    metrics['f1_weighted'] = f1
-    
-    # ROC-AUC (One-vs-Rest for multiclass)
-    try:
-        metrics['roc_auc_ovr'] = roc_auc_score(
-            y, y_pred_proba, multi_class='ovr', average='weighted'
-        )
-    except Exception as e:
-        logging.warning(f"Could not compute ROC-AUC: {e}")
-        metrics['roc_auc_ovr'] = None
-    
-    # Per-class metrics
-    precision_per_class, recall_per_class, f1_per_class, support_per_class = \
-        precision_recall_fscore_support(y, y_pred, average=None, zero_division=0)
-    
-    for idx, severity in enumerate(sorted(y.unique())):
-        class_name = CLASS_LABELS.get(severity, f'Class {severity}')
-        metrics[f'class_{class_name}_precision'] = float(precision_per_class[idx])
-        metrics[f'class_{class_name}_recall'] = float(recall_per_class[idx])
-        metrics[f'class_{class_name}_f1'] = float(f1_per_class[idx])
-        metrics[f'class_{class_name}_support'] = int(support_per_class[idx])
-        
-    # Log metrics
-    logging.info(f"\n{dataset_prefix.upper()} SET METRICS:")
-    logging.info(f"  Accuracy: {metrics['accuracy']:.4f}")
-    logging.info(f"  Precision (weighted): {metrics['precision_weighted']:.4f}")
-    logging.info(f"  Recall (weighted): {metrics['recall_weighted']:.4f}")
-    logging.info(f"  F1-score (weighted): {metrics['f1_weighted']:.4f}")
-    if metrics['roc_auc_ovr'] is not None:
-        logging.info(f"  ROC-AUC (OvR): {metrics['roc_auc_ovr']:.4f}")
-    
-    return metrics
 
 def train_model() -> None:
     """
@@ -316,17 +266,20 @@ def train_model() -> None:
                     contexts=['training', 'validation', 'test'],
                     tags_list=[None, None, None]
                     )
-                current_model_info = train_random_forest(X_train, y_train, X_val, y_val)
-                logging.info(f"Model trained and logged with run ID: {run.info.run_id}")
+                current_model_info = train_random_forest(X_train, y_train)
 
-                # Evaluate on test set
-                current_model_evaluation: mlflow.models.EvaluationResult = mlflow.models.evaluate(
+                # Evaluate the model on validation set with custom metrics
+                evaluate_model(
+                    current_model_info.model_uri,
+                    val_dataset,
+                    model_type="classifier"
+                )
+
+                # Evaluate on test set with custom metrics
+                current_model_evaluation = evaluate_model(
                     current_model_info.model_uri,
                     test_dataset,
-                    model_type="classifier",
-                    evaluator_config={
-                        'log_explainer': True
-                    }
+                    model_type="classifier"
                 )
 
             # Check for existing champion model
@@ -341,10 +294,10 @@ def train_model() -> None:
             # If champion model exists, compare with current model and register if better
             champion_model = mlflow.sklearn.load_model(champion_model_uri) if champion_model_info is not None else None
             if champion_model is not None:
-                champion_evaluation: mlflow.models.EvaluationResult = mlflow.models.evaluate(
+                champion_evaluation = evaluate_model(
                     champion_model_uri,
                     test_dataset,
-                    model_type="classifier",
+                    model_type="classifier"
                 )
 
             # Compare current model with champion model regarding BEST_MODEL_METRIC
