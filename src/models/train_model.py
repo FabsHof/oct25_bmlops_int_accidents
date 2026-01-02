@@ -30,6 +30,10 @@ from src.utils.database import get_db_connection
 
 load_dotenv()
 
+# ########### Configuration ###########
+BEST_MODEL_METRIC = 'val_accuracy'  # Metric used to select the best model for registration
+MODEL_NAME = 'random_forest_model'
+CHAMPION_MODEL_ALIAS = 'champion'
 
 # Mapping of severity levels to descriptive names
 CLASS_LABELS = {
@@ -39,6 +43,7 @@ CLASS_LABELS = {
     4: 'Killed'
 }
 
+# Features and target configuration
 FEATURE_COLUMNS = [
     'year',
     'month',
@@ -58,7 +63,9 @@ FEATURE_COLUMNS = [
     'holiday'
 ]
 TARGET_COLUMN = 'severity'
-HANDLE_MISSING = 'drop'  # Options: 'drop', 'impute'
+
+# Data handling configuration
+HANDLE_MISSING_STRATEGY = 'drop'  # Options: 'drop', 'impute'
 RANDOM_STATE = 42
 
 def setup_mlflow() -> None:
@@ -120,13 +127,13 @@ def prepare_features_and_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Seri
         Tuple of (features, target)
     """
     # Handle missing values
-    if HANDLE_MISSING == 'drop':
+    if HANDLE_MISSING_STRATEGY == 'drop':
         df_clean = df.dropna()
         dropped = len(df) - len(df_clean)
         if dropped > 0:
             logging.warning(f"Dropped {dropped} rows with missing values ({dropped/len(df)*100:.1f}%)")
         df = df_clean
-    elif HANDLE_MISSING == 'impute':
+    elif HANDLE_MISSING_STRATEGY == 'impute':
         # Simple imputation with median for numeric columns
         df = df.fillna(df.median())
         logging.info("Imputed missing values with median")
@@ -143,7 +150,7 @@ def prepare_features_and_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Seri
     
     return X, y
 
-def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series) -> Tuple[RandomForestClassifier,mlflow.entities.model_registry.ModelVersion]:
+def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series) -> mlflow.models.model.ModelInfo:
     """
     Train Random Forest Classifier with hyperparameter tuning, using GridSearchCV.
     
@@ -152,7 +159,7 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.Dat
         y_train: Training targets
         
     Returns:
-        Tuple of (trained RandomForestClassifier, model information)
+        Model information logged to MLflow
     """
     logging.info("Training Random Forest Classifier...")
     
@@ -165,17 +172,19 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.Dat
     grid_search = GridSearchCV(model, param_grid, cv=5, scoring="accuracy", n_jobs=-1)
     grid_search.fit(X_train, y_train)
     
-    # Log best model
-    best_model = grid_search.best_estimator_
+    # Log best estimator and parameters
+    tuned_random_forest = grid_search.best_estimator_
     best_parameters = grid_search.best_params_
-    logging.info(f"Best model parameters: {best_parameters}")
+    logging.info(f"Model parameters of tuned_random_forest: {best_parameters}")
     mlflow.log_params(best_parameters)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_name = f'rf_model_{timestamp}'
-    model_info = mlflow.sklearn.log_model(best_model, model_name)
+    model_info = mlflow.sklearn.log_model(
+        tuned_random_forest, 
+        MODEL_NAME, 
+        registered_model_name=MODEL_NAME
+    )
 
-    train_evaluation = evaluate_model(best_model, X_train, y_train, dataset_prefix='train')
-    val_evaluation = evaluate_model(best_model, X_val, y_val, dataset_prefix='val')
+    train_evaluation = evaluate_model(tuned_random_forest, X_train, y_train, dataset_prefix='train')
+    val_evaluation = evaluate_model(tuned_random_forest, X_val, y_val, dataset_prefix='val')
     
     logging.info(f"Training evaluation: {train_evaluation}")
     for key, value in train_evaluation.items():
@@ -187,7 +196,7 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.Dat
         logging.info(f"Logging validation metric {key}: {value}")
         mlflow.log_metric(f"val_{key}", value)
 
-    return best_model, model_info
+    return model_info
 
 def evaluate_model(model: RandomForestClassifier, 
                   X: pd.DataFrame, 
@@ -307,38 +316,60 @@ def train_model() -> None:
                     contexts=['training', 'validation', 'test'],
                     tags_list=[None, None, None]
                     )
-                model, model_info = train_random_forest(X_train, y_train, X_val, y_val)
-                model_name = 'random_forest_model'
-                mlflow.sklearn.log_model(model, name=model_name)
-                logging.info(f"Model logged to MLflow with URI: runs:/{run.info.run_id}/{model_name}")
+                current_model_info = train_random_forest(X_train, y_train, X_val, y_val)
+                logging.info(f"Model trained and logged with run ID: {run.info.run_id}")
 
                 # Evaluate on test set
-                result = mlflow.models.evaluate(
-                    model_info.model_uri,
+                current_model_evaluation: mlflow.models.EvaluationResult = mlflow.models.evaluate(
+                    current_model_info.model_uri,
+                    test_dataset,
+                    model_type="classifier",
+                    evaluator_config={
+                        'log_explainer': True
+                    }
+                )
+
+            # Check for existing champion model
+            champion_model_uri = f'models:/{MODEL_NAME}@{CHAMPION_MODEL_ALIAS}'
+            try:
+                champion_model_info = mlflow.models.get_model_info(champion_model_uri)
+                logging.info("Found existing champion model")
+            except Exception as e:
+                logging.info(f"No existing champion model found: {e}")
+                champion_model_info = None
+            
+            # If champion model exists, compare with current model and register if better
+            champion_model = mlflow.sklearn.load_model(champion_model_uri) if champion_model_info is not None else None
+            if champion_model is not None:
+                champion_evaluation: mlflow.models.EvaluationResult = mlflow.models.evaluate(
+                    champion_model_uri,
                     test_dataset,
                     model_type="classifier",
                 )
-                logging.info(f"MLflow model evaluation result: {result}")
 
-            # Query for the best model based on validation accuracy
-            best_model = mlflow.search_logged_models(
-                order_by=[{'field_name': 'metrics.val_accuracy', 'ascending': False}],
-                max_results=1,
-                output_format='pandas'
-            )
-
-            if not best_model.empty:
-                best_model_info = best_model.iloc[0]
-                logging.info(f"Best model found: Name={best_model_info.name}, Metrics={best_model_info.metrics}")
-                
-                # Register the best model
-                mlflow.register_model(
-                    model_uri=f"models:/best_{best_model_info.name}",
-                    name="Best_Accident_Severity_Random_Forest"
-                )
-                logging.info("Best model registered successfully.")
+            # Compare current model with champion model regarding BEST_MODEL_METRIC
+            is_current_better = False
+            if champion_model is None:
+                is_current_better = True
             else:
-                logging.warning("No best model found based on validation accuracy.")
+                current_metric = current_model_evaluation.metrics.get(BEST_MODEL_METRIC)
+                champion_metric = champion_evaluation.metrics.get(BEST_MODEL_METRIC)
+                logging.info(f"Comparing {BEST_MODEL_METRIC} for champion: {champion_metric} and current: {current_metric}")
+                if current_metric is not None and champion_metric is not None:
+                    is_current_better = current_metric > champion_metric
+            
+            # add alias 'champion' to the current model if better than champion or no champion exists
+            if is_current_better:
+                client = mlflow.tracking.MlflowClient()
+                client.set_registered_model_alias(
+                    name=MODEL_NAME,
+                    alias=CHAMPION_MODEL_ALIAS,
+                    version=current_model_info.registered_model_version
+                )
+
+                logging.info(f"Current model (version {current_model_info.registered_model_version}) is now the new champion.")
+            else:
+                logging.info("Current model did not outperform the champion model. No changes made to champion.")
 
         except Exception as e:
             logging.error(f"Error during model training: {e}")
