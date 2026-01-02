@@ -1,0 +1,8 @@
+FROM minio/minio:latest
+
+# Copy the custom entrypoint script and make it executable
+COPY scripts/minio-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["server", "/data", "--console-address", ":9001"]

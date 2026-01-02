@@ -237,10 +237,10 @@ def ingest_data_full(
     
     # Get raw data path from argument or environment variable
     if raw_data_path is None:
-        raw_data_path = os.getenv('DATA_RAW_PATH', 'data/raw')
+        raw_data_path = os.getenv('RAW_DATA_PATH', 'data/raw')
     
     if not raw_data_path:
-        raise ValueError("raw_data_path must be provided or DATA_RAW_PATH must be set")
+        raise ValueError("raw_data_path must be provided or RAW_DATA_PATH must be set")
     
     # Find the latest CSV directory
     csv_dir = find_latest_csv_directory(raw_data_path)
@@ -307,10 +307,10 @@ def load_next_chunk(raw_data_path: Optional[str] = None, chunk_size: int = DEFAU
     
     # Get raw data path from argument or environment variable
     if raw_data_path is None:
-        raw_data_path = os.getenv('DATA_RAW_PATH', 'data/raw')
+        raw_data_path = os.getenv('RAW_DATA_PATH', 'data/raw')
     
     if not raw_data_path:
-        raise ValueError("raw_data_path must be provided or DATA_RAW_PATH must be set")
+        raise ValueError("raw_data_path must be provided or RAW_DATA_PATH must be set")
     
     conn = get_db_connection()
     
@@ -443,7 +443,7 @@ def reset_progress(raw_data_path: Optional[str] = None, chunk_size: int = DEFAUL
     
     # Get raw data path from argument or environment variable
     if raw_data_path is None:
-        raw_data_path = os.getenv('DATA_RAW_PATH', 'data/raw')
+        raw_data_path = os.getenv('RAW_DATA_PATH', 'data/raw')
     
     conn = get_db_connection()
     
