@@ -17,7 +17,7 @@ echo "Configuring MinIO buckets..."
 # Create the specified bucket
 /usr/bin/mc mb --ignore-existing local/"$MINIO_BUCKET_NAME"
 
-# Set the bucket to be publicly unaccessible
+# Set the bucket to be not publicly accessible
 /usr/bin/mc anonymous set none local/"$MINIO_BUCKET_NAME"
 echo "MinIO is ready to accept connections."
 
