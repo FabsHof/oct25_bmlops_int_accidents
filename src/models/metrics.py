@@ -62,7 +62,7 @@ def _roc_auc_ovr_metric_fn(predictions: Union[List, np.ndarray],
     except Exception as e:
         score = None
     
-    result = {'roc_auc_ovr': score} if score is not None else {'roc_auc_ovr': 0.0}
+    result = {'roc_auc_ovr': score} if score is not None else {'roc_auc_ovr': float('nan')}
     return MetricValue(aggregate_results=result)
 
 
