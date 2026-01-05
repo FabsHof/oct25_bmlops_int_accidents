@@ -144,3 +144,18 @@ The project implements a Random Forest Classifier for predicting accident severi
 - **Model**: Random Forest Classifier with 100 trees
 - **Metrics**: Accuracy, Precision, Recall, F1-score (weighted), ROC-AUC
 - **Artifacts**: Model, metrics, feature importance, confusion matrix, config
+
+
+## Streamlit Presentation
+
+1. **Start the API locally with:**
+   ```bash
+   uvicorn src.api.main:app --reload
+   ```
+
+2. **Start the Streamlit App locally with:**
+   ```bash
+   streamlit run src/streamlit/streamlit_app.py
+   ```
+3. **The Stramlit App can be accessed at:**
+   http://localhost:8501/
