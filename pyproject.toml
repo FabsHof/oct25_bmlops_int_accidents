@@ -9,6 +9,7 @@ dependencies = [
     "httpx>=0.28.1",
     "joblib>=1.5.2",
     "kagglehub>=0.3.13",
+    "mlflow>=3.7.0",
     "pandas>=2.3.3",
     "psycopg2-binary>=2.9.10",
     "python-dotenv>=1.0.0",

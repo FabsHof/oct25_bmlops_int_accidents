@@ -34,6 +34,15 @@ The project is structured as follows:
     │   │
     │   └── config         <- Describe the parameters used in train_model.py and predict_model.py
 
+## 🚀 Quick start
+
+1. Clone this repository and move into the project root.
+2. Create a `.env` file in the root directory (you can start from `.env.example`).
+3. Create a virtual environment and install dependencies (see the "⚙️ Setup" section below):
+   ```bash
+   uv venv create .venv
+   uv sync
+
 ## ⚙️ Setup
 
 1. Install Python 3.11 or higher.
