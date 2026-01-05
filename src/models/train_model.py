@@ -116,6 +116,18 @@ def load_training_data(conn, dataset_split: str = 'train') -> pd.DataFrame:
     
     return df
 
+def load_data_ingestion_metadata(conn) -> pd.DataFrame:
+    """Load the last data ingestion metadata from the database."""
+    query = """
+        SELECT *
+        FROM data_ingestion_progress
+        ORDER BY id DESC
+        LIMIT 1
+    """
+    df = pd.read_sql_query(query, conn)
+    logging.info(f"Last metadata entry: {df.iloc[0]}")
+    return df
+
 def prepare_features_and_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     """
     Prepare features (X) and target (y) from dataframe.
@@ -145,9 +157,6 @@ def prepare_features_and_target(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Seri
     # Convert all features to float64 to handle missing values and avoid MLflow schema warnings
     X = X.astype('float64')
     
-    logging.info(f"Prepared features: {X.shape[1]} columns, {X.shape[0]} rows")
-    logging.info(f"Target distribution: {y.value_counts().to_dict()}")
-    
     return X, y
 
 def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series ) -> mlflow.models.model.ModelInfo:
@@ -175,7 +184,6 @@ def train_random_forest(X_train: pd.DataFrame, y_train: pd.Series ) -> mlflow.mo
     # Log best estimator and parameters
     tuned_random_forest = grid_search.best_estimator_
     best_parameters = grid_search.best_params_
-    logging.info(f"Model parameters of tuned_random_forest: {best_parameters}")
 
     mlflow.log_params(best_parameters)
     model_info = mlflow.sklearn.log_model(
@@ -204,7 +212,6 @@ def evaluate_model(model_uri: str, dataset: mlflow.data.Dataset, model_type: str
         model_type=model_type,
         evaluator_config={
             'log_explainer': True,
-            'explainer_type': 'exact',
         },
         extra_metrics=[
             weighted_f1_score_metric,
@@ -215,6 +222,80 @@ def evaluate_model(model_uri: str, dataset: mlflow.data.Dataset, model_type: str
         ]
     )
 
+def create_versioned_dataset(data, version: int, base_name: str, target_column: str, source: str = None) -> mlflow.data.Dataset:
+    """Create a versioned dataset with metadata."""
+
+    with mlflow.start_run(run_name=f'{base_name}_versioning', nested=True):
+        dataset = mlflow.data.from_pandas(
+            data,
+            source=source,
+            name=f"{base_name}-v{version}",
+            targets=target_column,
+        )
+        mlflow.log_input(dataset, context="dataset_versioning")
+
+        # Log version metadata
+        mlflow.log_params(
+            {
+                "dataset_version": version,
+                "data_size": len(data),
+                "features_count": len(data.columns) - 1,
+                "target_distribution": data[target_column].value_counts().to_dict(),
+            }
+        )
+
+        # Log data quality metrics
+        mlflow.log_metrics(
+            {
+                "missing_values_pct": (data.isnull().sum().sum() / data.size) * 100,
+                "duplicate_rows": data.duplicated().sum(),
+                "target_balance": data[target_column].std(),
+            }
+        )
+
+    return dataset
+
+def prepare_datasets() -> Tuple[Tuple[pd.DataFrame, pd.Series, mlflow.data.Dataset], Tuple[pd.DataFrame, pd.Series, mlflow.data.Dataset], Tuple[pd.DataFrame, pd.Series, mlflow.data.Dataset]]:
+    """
+    Load and prepare training, validation, and test datasets.
+    Returns:
+        Tuple of (train_dataset, val_dataset, test_dataset)
+    """
+    with get_db_connection() as conn:
+        meta_df = load_data_ingestion_metadata(conn)
+        data_version = meta_df['id'].iloc[0]
+
+        train_df = load_training_data(conn, 'train')
+        val_df = load_training_data(conn, 'validation')
+        test_df = load_training_data(conn, 'test')
+        
+        X_train, y_train = prepare_features_and_target(train_df)
+        X_val, y_val = prepare_features_and_target(val_df)
+        X_test, y_test = prepare_features_and_target(test_df)
+
+        train_dataset = create_versioned_dataset(
+            pd.concat([X_train, y_train], axis=1), 
+            version=data_version, 
+            base_name='training_data',
+            target_column=TARGET_COLUMN
+        )
+
+        val_dataset = create_versioned_dataset(
+            pd.concat([X_val, y_val], axis=1), 
+            version=data_version, 
+            base_name='validation_data',
+            target_column=TARGET_COLUMN
+        )
+
+        test_dataset = create_versioned_dataset(
+            pd.concat([X_test, y_test], axis=1), 
+            version=data_version, 
+            base_name='test_data',
+            target_column=TARGET_COLUMN
+        )
+
+    return (X_train, y_train, train_dataset), (X_val, y_val, val_dataset), (X_test, y_test, test_dataset)
+
 def train_model() -> None:
     """
     Main training function that orchestrates the entire training pipeline.
@@ -223,110 +304,97 @@ def train_model() -> None:
     tuning, evaluates on validation and test sets, and registers the best model
     to MLflow.
     """
-    logging.info("="*80)
-    logging.info("STARTING MODEL TRAINING PIPELINE")
-    logging.info("="*80)
-    
-    with get_db_connection() as conn:
-    
-        try:
-            # Load data
-            train_df = load_training_data(conn, 'train')
-            val_df = load_training_data(conn, 'validation')
-            test_df = load_training_data(conn, 'test')
-            
-            # Prepare features and targets
-            X_train, y_train = prepare_features_and_target(train_df)
-            X_val, y_val = prepare_features_and_target(val_df)
-            X_test, y_test = prepare_features_and_target(test_df)
 
-            # Log datasets to MLflow
-            train_dataset = mlflow.data.from_pandas(
-                pd.concat([X_train, y_train], axis=1),
-                source='accidents_db.clean_data',
-                name='Training Data',
-                targets=TARGET_COLUMN
-            )
-            val_dataset = mlflow.data.from_pandas(
-                pd.concat([X_val, y_val], axis=1),
-                source='accidents_db.clean_data',
-                name='Validation Data',
-                targets=TARGET_COLUMN
-            )
-            test_dataset = mlflow.data.from_pandas(
-                pd.concat([X_test, y_test], axis=1),
-                source='accidents_db.clean_data',
-                name='Test Data',
-                targets=TARGET_COLUMN
-            )
-            
-            with mlflow.start_run() as run:
+    with mlflow.start_run(run_name='training', nested=True) as parent_run:
+
+        # Nested run for dataset preparation
+        try:
+            (X_train, y_train, train_dataset), (X_val, y_val, val_dataset), (X_test, y_test, test_dataset) = prepare_datasets()
+        except Exception as e:
+            logging.error(f"Error preparing datasets: {e}")
+            raise
+        
+        # Nested run for model training
+        try:
+            with mlflow.start_run(run_name='model_training', nested=True) as training_run:
+                logging.info("Logging datasets to MLflow...")
                 mlflow.log_inputs(
                     datasets=[train_dataset, val_dataset, test_dataset], 
                     contexts=['training', 'validation', 'test'],
                     tags_list=[None, None, None]
-                    )
+                )
+                logging.info("Datasets logged successfully.")
+                logging.info("Starting model training...")
                 current_model_info = train_random_forest(X_train, y_train)
+                logging.info(f"Model trained and logged with URI: {current_model_info.model_uri}")
 
-                # Evaluate the model on validation set with custom metrics
+                # Evaluate the model on validation and test sets with custom metrics
+                logging.info("Evaluating model on validation and test datasets...")
                 evaluate_model(
                     current_model_info.model_uri,
                     val_dataset,
                     model_type="classifier"
                 )
-
-                # Evaluate on test set with custom metrics
                 current_model_evaluation = evaluate_model(
                     current_model_info.model_uri,
                     test_dataset,
                     model_type="classifier"
                 )
-
-            # Check for existing champion model
-            champion_model_uri = f'models:/{MODEL_NAME}@{CHAMPION_MODEL_ALIAS}'
-            try:
-                champion_model_info = mlflow.models.get_model_info(champion_model_uri)
-                logging.info("Found existing champion model")
-            except Exception as e:
-                logging.info(f"No existing champion model found: {e}")
-                champion_model_info = None
-            
-            # If champion model exists, compare with current model and register if better
-            champion_model = mlflow.sklearn.load_model(champion_model_uri) if champion_model_info is not None else None
-            if champion_model is not None:
-                champion_evaluation = evaluate_model(
-                    champion_model_uri,
-                    test_dataset,
-                    model_type="classifier"
-                )
-
-            # Compare current model with champion model regarding BEST_MODEL_METRIC
-            is_current_better = False
-            if champion_model is None:
-                is_current_better = True
-            else:
-                current_metric = current_model_evaluation.metrics.get(BEST_MODEL_METRIC)
-                champion_metric = champion_evaluation.metrics.get(BEST_MODEL_METRIC)
-                logging.info(f"Comparing {BEST_MODEL_METRIC} for champion: {champion_metric} and current: {current_metric}")
-                if current_metric is not None and champion_metric is not None:
-                    is_current_better = current_metric > champion_metric
-            
-            # add alias 'champion' to the current model if better than champion or no champion exists
-            if is_current_better:
-                client = mlflow.tracking.MlflowClient()
-                client.set_registered_model_alias(
-                    name=MODEL_NAME,
-                    alias=CHAMPION_MODEL_ALIAS,
-                    version=current_model_info.registered_model_version
-                )
-
-                logging.info(f"Current model (version {current_model_info.registered_model_version}) is now the new champion.")
-            else:
-                logging.info("Current model did not outperform the champion model. No changes made to champion.")
-
+                logging.info("Model evaluation completed.")
         except Exception as e:
-            logging.error(f"Error during model training: {e}")
+            logging.error(f"Error logging datasets to MLflow: {e}")
             raise
+
+        # Nested run for model registration and champion comparison
+        try:
+            with mlflow.start_run(run_name='model_registration', nested=True) as registration_run:
+                logging.info("Registering and comparing model with champion...")
+                
+                # Check for existing champion model
+                champion_model_uri = f'models:/{MODEL_NAME}@{CHAMPION_MODEL_ALIAS}'
+                try:
+                    champion_model_info = mlflow.models.get_model_info(champion_model_uri)
+                    logging.info("Found existing champion model")
+                except Exception as e:
+                    logging.info(f"No existing champion model found: {e}")
+                    champion_model_info = None
+
+                # If champion model exists, compare with current model and register if better
+                champion_model = mlflow.sklearn.load_model(champion_model_uri) if champion_model_info is not None else None
+                if champion_model is not None:
+                    champion_evaluation = evaluate_model(
+                        champion_model_uri,
+                        test_dataset,
+                        model_type="classifier"
+                    )
+
+                # Compare current model with champion model regarding BEST_MODEL_METRIC
+                is_current_better = False
+                if champion_model is None:
+                    is_current_better = True
+                else:
+                    current_metric = current_model_evaluation.metrics.get(BEST_MODEL_METRIC)
+                    champion_metric = champion_evaluation.metrics.get(BEST_MODEL_METRIC)
+                    logging.info(f"Comparing {BEST_MODEL_METRIC} for champion: {champion_metric} and current: {current_metric}")
+                    if current_metric is not None and champion_metric is not None:
+                        is_current_better = current_metric > champion_metric
+                
+                # add alias 'champion' to the current model if better than champion or no champion exists
+                if is_current_better:
+                    client = mlflow.tracking.MlflowClient()
+                    client.set_registered_model_alias(
+                        name=MODEL_NAME,
+                        alias=CHAMPION_MODEL_ALIAS,
+                        version=current_model_info.registered_model_version
+                    )
+
+                    logging.info(f"Current model (version {current_model_info.registered_model_version}) is now the new champion.")
+                else:
+                    logging.info("Current model did not outperform the champion model. No changes made to champion.")
+        except Exception as e:
+            logging.error(f"Error during model registration and comparison: {e}")
+            raise
+
     logging.info("Model training pipeline completed successfully.")
 
 def main():
