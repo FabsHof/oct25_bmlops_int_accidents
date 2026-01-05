@@ -7,9 +7,14 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.121.3",
     "httpx>=0.28.1",
+    "joblib>=1.5.2",
+    "kagglehub>=0.3.13",
+    "pandas>=2.3.3",
+    "psycopg2-binary>=2.9.10",
     "pydantic>=2.12.5",
     "python-dotenv>=1.0.0",
     "requests>=2.32.5",
+    "scikit-learn>=1.7.2",
     "streamlit>=1.52.2",
     "uvicorn>=0.38.0",
 ]
