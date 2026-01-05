@@ -1,8 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.security import APIKeyQuery
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Dict, Optional
 import os
+import time
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -20,6 +21,8 @@ from src.models.predict_model import (
     AccidentSeverityPredictor,
     get_best_model_dir
 )
+from src.monitoring.metrics import get_metrics_collector
+from src.monitoring.drift import get_drift_detector
 
 
 # Pydantic models for request/response validation
@@ -175,6 +178,21 @@ def health_check(api_key: str = Depends(verify_api_key)):
     return {"status": "healthy"}
 
 
+@app.get('/metrics', tags=['monitoring'])
+def get_metrics():
+    """
+    Prometheus metrics endpoint.
+    
+    Returns:
+        Prometheus-formatted metrics for scraping
+    """
+    metrics_collector = get_metrics_collector()
+    return Response(
+        content=metrics_collector.get_metrics(),
+        media_type="text/plain; version=0.0.4; charset=utf-8"
+    )
+
+
 @app.post('/predict', tags=['model'], response_model=PredictionResponse)
 def predict_severity(
     request: PredictionRequest,
@@ -197,6 +215,10 @@ def predict_severity(
     Raises:
         HTTPException: If prediction fails or model is unavailable
     """
+    start_time = time.time()
+    metrics_collector = get_metrics_collector()
+    drift_detector = get_drift_detector()
+    
     try:
         # Get predictor (will initialize if needed)
         predictor = get_predictor()
@@ -207,6 +229,18 @@ def predict_severity(
         # Make prediction
         result = predictor.predict(input_data)
         
+        # Record metrics
+        latency = time.time() - start_time
+        metrics_collector.record_prediction(
+            severity_class=result['prediction'],
+            severity_label=result['prediction_label'],
+            confidence=result['confidence'],
+            latency=latency
+        )
+        
+        # Add data to drift detector buffer
+        drift_detector.add_prediction_data(input_data)
+        
         # Add model version to response
         result['model_version'] = predictor.model_dir.name
         
@@ -214,12 +248,39 @@ def predict_severity(
         
     except HTTPException:
         # Re-raise HTTP exceptions
+        metrics_collector.record_error('http_error')
         raise
     except Exception as e:
+        metrics_collector.record_error('internal_error')
         raise HTTPException(
             status_code=500,
             detail=f"Prediction failed: {str(e)}"
         )
+
+
+@app.get('/monitoring/drift', tags=['monitoring'])
+def get_drift_status(api_key: str = Depends(verify_api_key)) -> Dict:
+    """
+    Get the current drift detection status.
+    
+    Returns:
+        Dictionary with drift buffer status and latest drift analysis
+    """
+    drift_detector = get_drift_detector()
+    return drift_detector.get_buffer_status()
+
+
+@app.post('/monitoring/drift/analyze', tags=['monitoring'])
+def trigger_drift_analysis(api_key: str = Depends(verify_api_key)) -> Dict:
+    """
+    Manually trigger drift analysis on buffered data.
+    
+    Returns:
+        Drift analysis results
+    """
+    drift_detector = get_drift_detector()
+    result = drift_detector.analyze_drift()
+    return result
 
 
 @app.get('/model/info', tags=['model'])
