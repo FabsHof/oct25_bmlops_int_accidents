@@ -5,7 +5,8 @@ from .schemas import UserInDB
 fake_users_db = {
     "alice": {
         "username": "alice",
-        "hashed_password": "$2b$12$KIXQ1j1F8pYQxvFJH3hE5O6ZLZK9Gz7Hh9c6mV1XyN0k7P6f4nJqS",
+        "hashed_password": "$2b$12$ud/UQOrRn5ZLMR3i/Lng7e.9d4vqnWtXcqMr2XK4fGDoUgky.ACie",
+        # the hashed password comes from the password "secret". which you need to use in the login form
         "disabled": False,
     }
 }
