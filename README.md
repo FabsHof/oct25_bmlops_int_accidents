@@ -34,6 +34,11 @@ The project is structured as follows:
     │   │
     │   └── config         <- Describe the parameters used in train_model.py and predict_model.py
 
+## Prerequisites
+
+1. install [UV](https://docs.astral.sh/uv/getting-started/installation/).
+2. install [Docker](https://docs.docker.com/get-docker/).
+
 ## 🚀 Quick start
 
 1. Clone this repository and move into the project root.

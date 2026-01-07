@@ -7,53 +7,6 @@
 
 FROM apache/airflow:3.0.1-python3.11
 
-# Switch to root to install system dependencies
-USER root
+COPY requirements.txt /requirements.txt
 
-# Install system dependencies required for psycopg2 and other packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    curl \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create app directory for project source code
-RUN mkdir -p /app && chown -R airflow:root /app
-
-# Switch back to airflow user
-USER airflow
-
-# Set working directory
-WORKDIR /app
-
-# Copy requirements and install Python dependencies
-# Note: We install project dependencies that DAGs need
-COPY --chown=airflow:root pyproject.toml /app/
-
-# Install project dependencies (excluding airflow itself to avoid conflicts)
-RUN pip install --no-cache-dir \
-    evidently>=0.6.0 \
-    httpx>=0.28.1 \
-    joblib>=1.5.2 \
-    kagglehub>=0.3.13 \
-    mlflow>=3.7.0 \
-    pandas>=2.3.3 \
-    prometheus-client>=0.21.0 \
-    psycopg2-binary>=2.9.10 \
-    python-dotenv>=1.0.0 \
-    scikit-learn>=1.7.2
-
-# Install Airflow providers for Celery and FAB Auth Manager
-RUN pip install --no-cache-dir \
-    apache-airflow-providers-celery \
-    apache-airflow-providers-fab
-
-# Copy source code
-COPY --chown=airflow:root src/ /app/src/
-
-# Set PYTHONPATH to include the app directory
-ENV PYTHONPATH="/app:${PYTHONPATH}"
-
-# Switch to airflow home for Airflow operations
-WORKDIR /opt/airflow
+RUN uv pip install --no-cache-dir -r /requirements.txt

@@ -19,6 +19,12 @@ echo ""
 # Change to project root
 cd "$PROJECT_ROOT"
 
+# Generate requirements.txt from pyproject.toml using uv
+echo ">>> Generating requirements.txt..."
+uv pip compile pyproject.toml -o requirements.txt
+echo "✓ requirements.txt generated"
+echo ""
+
 # Create necessary directories for Airflow
 echo ">>> Creating Airflow directories..."
 mkdir -p ./dags
