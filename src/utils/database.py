@@ -27,16 +27,16 @@ def get_db_connection() -> connection:
         psycopg2.Error: If database connection fails
     """
     db_config = {
-        'host': os.getenv('POSTGRES_HOST', 'localhost'),
-        'port': os.getenv('POSTGRES_HOST_PORT', '5432'),
-        'database': os.getenv('POSTGRES_DB', 'accidents_db'),
-        'user': os.getenv('POSTGRES_USER'),
-        'password': os.getenv('POSTGRES_PASSWORD')
+        'host': os.getenv('ACCIDENTS_POSTGRES_HOST', 'localhost'),
+        'port': os.getenv('ACCIDENTS_POSTGRES_HOST_PORT', '5432'),
+        'database': os.getenv('ACCIDENTS_POSTGRES_DB', 'accidents_db'),
+        'user': os.getenv('ACCIDENTS_POSTGRES_USER'),
+        'password': os.getenv('ACCIDENTS_POSTGRES_PASSWORD')
     }
     
     # Validate required environment variables
     if not db_config['user'] or not db_config['password']:
-        raise ValueError("POSTGRES_USER and POSTGRES_PASSWORD must be set in environment variables")
+        raise ValueError("ACCIDENTS_POSTGRES_USER and ACCIDENTS_POSTGRES_PASSWORD must be set in environment variables")
     
     logging.info(f"Connecting to database: {db_config['database']} at {db_config['host']}:{db_config['port']}")
     

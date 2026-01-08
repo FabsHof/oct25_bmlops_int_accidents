@@ -4,11 +4,14 @@ be called properly from a container.
 """
 
 from fastapi import FastAPI, Depends, HTTPException
-from fastapi.security import APIKeyQuery
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Dict, Optional
-import os
 from dotenv import load_dotenv
+
+from fastapi.security import OAuth2PasswordRequestForm
+from src.auth.security import get_current_user, create_access_token, authenticate_user
+from src.auth.schemas import Token
+
 
 # Load environment variables
 load_dotenv()
@@ -111,40 +114,28 @@ app = FastAPI(
     version="1.0.0"
 )
 
-query_schema = APIKeyQuery(name="api_key")
+
 
 # Global variable to cache the predictor
 _predictor: Optional[AccidentSeverityPredictor] = None
 
-
-def verify_api_key(api_key: str = Depends(query_schema)) -> str:
-    """
-    Verify the API key provided by the user.
-    
-    Args:
-        api_key: API key from query parameter
-        
-    Returns:
-        API key if valid
-        
-    Raises:
-        HTTPException: If API key is invalid
-    """
-    expected_key = os.getenv("API_KEY")
-    
-    if not expected_key:
-        raise HTTPException(
-            status_code=500,
-            detail="API_KEY not configured on server"
-        )
-    
-    if api_key != expected_key:
+@app.post("/token", response_model=Token)
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
         raise HTTPException(
             status_code=401,
-            detail="Invalid API key"
+            detail="Incorrect username or password",
         )
-    
-    return api_key
+
+    access_token = create_access_token(
+        data={"sub": user.username}
+    )
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
+
 
 
 def get_predictor() -> AccidentSeverityPredictor:
@@ -183,7 +174,7 @@ def read_root():
     return {"message": "Welcome to the Road Accidents Severity Prediction API"}
 
 @app.get('/health')
-def health_check(api_key: str = Depends(verify_api_key)):
+def health_check(current_user = Depends(get_current_user)):
     """Health check endpoint to verify API is running."""
     return {"status": "healthy"}
 
@@ -191,7 +182,7 @@ def health_check(api_key: str = Depends(verify_api_key)):
 @app.post('/predict', tags=['model'], response_model=PredictionResponse)
 def predict_severity(
     request: PredictionRequest,
-    api_key: str = Depends(verify_api_key)
+    current_user = Depends(get_current_user)
 ) -> PredictionResponse:
     """
     Predict the severity of a road accident based on input features.
@@ -236,7 +227,7 @@ def predict_severity(
 
 
 @app.get('/model/info', tags=['model'])
-def get_model_info(api_key: str = Depends(verify_api_key)) -> Dict:
+def get_model_info( current_user = Depends(get_current_user)) -> Dict:
     """
     Get information about the currently loaded model.
     
@@ -263,93 +254,3 @@ def get_model_info(api_key: str = Depends(verify_api_key)) -> Dict:
             detail=f"Failed to get model info: {str(e)}"
         )
 
-
-@app.get('/train', tags=['model'])
-def train_model(api_key: str = Depends(verify_api_key)):
-    # Placeholder for training logic
-    return {"training": "Model training logic not yet implemented"}
-
-@app.post('/data/ingest-chunk', tags=['data'])
-def ingest_data_chunk(api_key: str = Depends(verify_api_key)):
-    """
-    Load the next chunk of data into the database.
-    
-    This endpoint simulates data evolution by loading data incrementally.
-    Each call loads the next chunk for all tables that haven't completed yet.
-    
-    Returns:
-        Dictionary with loading results and progress for each table
-    """
-    try:
-        result = load_next_chunk()
-        
-        if not result.get('success', False):
-            raise HTTPException(status_code=500, detail=result.get('message', 'Failed to load data chunk'))
-        
-        return result
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading data chunk: {str(e)}")
-
-@app.get('/data/progress', tags=['data'])
-def get_ingestion_progress(api_key: str = Depends(verify_api_key)):
-    """
-    Get the current progress of data ingestion for all tables.
-    
-    Returns:
-        Dictionary with progress information including rows loaded, total rows,
-        and completion percentage for each table
-    """
-    try:
-        conn = get_db_connection()
-        try:
-            progress = get_progress_status(conn)
-            
-            if not progress:
-                return {
-                    'message': 'No data ingestion in progress. Use POST /data/ingest-chunk to start.',
-                    'tables': {}
-                }
-            
-            # Calculate overall progress
-            total_rows_all = sum(p['total_rows'] for p in progress.values())
-            loaded_rows_all = sum(p['rows_loaded'] for p in progress.values())
-            overall_percentage = (loaded_rows_all / total_rows_all * 100) if total_rows_all > 0 else 0
-            all_complete = all(p['is_complete'] for p in progress.values())
-            
-            return {
-                'tables': progress,
-                'overall': {
-                    'total_rows': total_rows_all,
-                    'loaded_rows': loaded_rows_all,
-                    'progress_percentage': round(overall_percentage, 2),
-                    'is_complete': all_complete
-                }
-            }
-        finally:
-            conn.close()
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving progress: {str(e)}")
-
-@app.post('/data/reset-progress', tags=['data'])
-def reset_ingestion_progress(api_key: str = Depends(verify_api_key)):
-    """
-    Reset the data ingestion progress to start from the beginning.
-    
-    This will clear all progress tracking and allow restarting the
-    incremental loading process from scratch.
-    
-    Returns:
-        Dictionary with reset status
-    """
-    try:
-        result = reset_progress()
-        
-        if not result.get('success', False):
-            raise HTTPException(status_code=500, detail=result.get('message', 'Failed to reset progress'))
-        
-        return result
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error resetting progress: {str(e)}")

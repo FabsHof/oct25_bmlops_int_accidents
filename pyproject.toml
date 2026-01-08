@@ -5,15 +5,20 @@ description = "MLOps project to predict the severity of traffic accidents in Fra
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "bcrypt<4",
     "fastapi>=0.121.3",
     "httpx>=0.28.1",
     "joblib>=1.5.2",
     "kagglehub>=0.3.13",
+    "mlflow>=3.7.0",
     "pandas>=2.3.3",
+    "passlib[bcrypt]>=1.7.4",
     "psycopg2-binary>=2.9.10",
     "pydantic>=2.12.5",
     "python-dotenv>=1.0.0",
     "requests>=2.32.5",
+    "python-jose>=3.5.0",
+    "python-multipart>=0.0.21",
     "scikit-learn>=1.7.2",
     "streamlit>=1.52.2",
     "uvicorn>=0.38.0",
