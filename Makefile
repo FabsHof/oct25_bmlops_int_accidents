@@ -1,10 +1,7 @@
 # ==============================
-# API targets
+# Data targets
 # ==============================
-api_dev:
-	uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
-api_prod:
-	uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+# TODO: tbc
 
 test:
 	pytest tests/
@@ -35,3 +32,13 @@ airflow-down:
 # General targets
 # ==============================
 setup: airflow-setup
+up: 
+	docker compose up -d
+up_build: 
+	docker compose up -d --build
+down: 
+	docker compose down
+down_volumes: 
+	docker compose down -v
+logs: 
+	docker compose logs -f

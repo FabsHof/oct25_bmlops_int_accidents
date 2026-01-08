@@ -7,6 +7,14 @@
 
 FROM apache/airflow:3.1.5
 
-COPY requirements.txt /requirements.txt
+USER root
+# Install system dependencies if needed
+# RUN apt-get update && apt-get install -y <packages> && apt-get clean
 
-RUN uv pip install --no-cache-dir -r /requirements.txt
+USER airflow
+
+# Use a minimal requirements file that only includes project-specific dependencies
+# not already provided by the base Airflow image
+COPY requirements-airflow.txt /requirements-airflow.txt
+
+RUN pip install --no-cache-dir -r /requirements-airflow.txt

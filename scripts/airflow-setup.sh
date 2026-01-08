@@ -19,10 +19,7 @@ echo ""
 # Change to project root
 cd "$PROJECT_ROOT"
 
-# Generate requirements.txt from pyproject.toml using uv
-echo ">>> Generating requirements.txt..."
-uv pip compile pyproject.toml -o requirements.txt
-echo "✓ requirements.txt generated"
+echo "Note: Docker uses requirements-airflow.txt with minimal dependencies"
 echo ""
 
 # Create necessary directories for Airflow
@@ -58,27 +55,4 @@ else
 fi
 echo ""
 
-# Build the Docker images
-echo ">>> Building Docker images..."
-docker compose build
-echo "✓ Docker images built"
-echo ""
-
-# Initialize Airflow database and create admin user
-echo ">>> Initializing Airflow..."
-docker compose up airflow-init
-echo "✓ Airflow initialized"
-echo ""
-
-echo "==================================================================="
 echo "🎉 Airflow setup is complete!"
-echo ""
-echo "You can now start Airflow with:"
-echo "    make airflow-up"
-echo ""
-echo "Or using docker compose directly:"
-echo "    docker compose up -d"
-echo ""
-echo "Access the Airflow web UI at: http://localhost:8080"
-echo "Default credentials: airflow / airflow"
-echo "==================================================================="
