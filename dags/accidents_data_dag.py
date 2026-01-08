@@ -27,13 +27,13 @@ from airflow.sdk.bases.operator import chain
 
 from src.utils import logging
 from src.utils.database import get_db_connection
+from src.utils.ml_utils import RANDOM_STATE
 from src.data.ingest_data import load_next_chunk, DEFAULT_CHUNK_SIZE
 from src.data.clean_data import transform_data, assign_dataset_splits
 
 load_dotenv()
 
 # ########### Configuration ###########
-RANDOM_STATE = 42
 TRAIN_RATIO = 0.6
 VAL_RATIO = 0.2
 TEST_RATIO = 0.2
@@ -41,7 +41,7 @@ TEST_RATIO = 0.2
 
 @dag(
     dag_id="accidents_data_pipeline",
-    schedule=None,  # Manual trigger only
+    schedule=None,
     start_date=datetime(2025, 1, 1),
     catchup=False,
     tags=['mlops', 'accidents', 'data-pipeline', 'etl'],
@@ -90,13 +90,11 @@ def accidents_data_pipeline():
         except Exception as e:
             raise Exception(f"Failed to download dataset: {e}")
         
-        # Move to timestamped directory
         raw_data_path = os.getenv('RAW_DATA_PATH', '/app/data/raw/')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M')
         target_dir = Path(raw_data_path) / timestamp
         target_dir.mkdir(parents=True, exist_ok=True)
         
-        # Copy downloaded files
         src_path = Path(downloaded_path)
         if src_path.is_dir():
             for item in src_path.iterdir():
@@ -138,13 +136,11 @@ def accidents_data_pipeline():
             
             if not result.get('success', False):
                 error_msg = result.get('message', 'Unknown error')
-                # Check if it's just "no more data" which is expected at the end
                 if 'complete' in error_msg.lower() or 'no more' in error_msg.lower():
                     all_complete = True
                     break
                 raise Exception(f"Ingestion failed: {error_msg}")
             
-            # Accumulate counts
             tables = result.get('tables', {})
             for table, count in tables.items():
                 total_records[table] = total_records.get(table, 0) + count
@@ -190,7 +186,7 @@ def accidents_data_pipeline():
         }
 
     @task()
-    def assign_splits(clean_result: Dict[str, Any]) -> Dict[str, Any]:
+    def assign_splits_task(clean_result: Dict[str, Any]) -> Dict[str, Any]:
         """Assign train/validation/test splits using stratified sampling."""
         logging.info('Assigning dataset splits (stratified by severity)...')
         
@@ -224,12 +220,10 @@ def accidents_data_pipeline():
         logging.info('Validating processed data...')
         
         with get_db_connection() as conn:
-            # Check total records
             total_query = "SELECT COUNT(*) as count FROM clean_data WHERE is_current = TRUE"
             total_df = pd.read_sql_query(total_query, conn)
             total_count = int(total_df['count'].iloc[0])
             
-            # Check split distribution
             split_query = """
                 SELECT dataset_split, COUNT(*) as count 
                 FROM clean_data 
@@ -239,7 +233,6 @@ def accidents_data_pipeline():
             split_df = pd.read_sql_query(split_query, conn)
             split_dist = dict(zip(split_df['dataset_split'], split_df['count']))
             
-            # Check class distribution per split
             class_query = """
                 SELECT dataset_split, severity, COUNT(*) as count 
                 FROM clean_data 
@@ -249,7 +242,6 @@ def accidents_data_pipeline():
             """
             class_df = pd.read_sql_query(class_query, conn)
             
-            # Check for any NULL splits
             null_query = "SELECT COUNT(*) as count FROM clean_data WHERE is_current = TRUE AND dataset_split IS NULL"
             null_df = pd.read_sql_query(null_query, conn)
             null_count = int(null_df['count'].iloc[0])
@@ -295,12 +287,11 @@ def accidents_data_pipeline():
     download_task = download_data()
     ingest_task = ingest_data(download_task)
     clean_task = clean_data(ingest_task)
-    split_task = assign_splits(clean_task)
+    split_task = assign_splits_task(clean_task)
     validate_task = validate_data(split_task)
     final_task = finalize()
     
     chain(init_task, download_task, ingest_task, clean_task, split_task, validate_task, final_task)
 
 
-# Instantiate the DAG
 accidents_data_pipeline()

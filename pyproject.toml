@@ -5,8 +5,8 @@ description = "MLOps project to predict the severity of traffic accidents in Fra
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "apache-airflow==3.1.5",
     "evidently>=0.6.0",
-    "fastapi>=0.121.3",
     "httpx>=0.28.1",
     "joblib>=1.5.2",
     "kagglehub>=0.3.13",
@@ -21,15 +21,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "matplotlib>=3.10.7",
     "pytest>=9.0.1",
-    "seaborn>=0.13.2",
-]
-
-airflow = [
-    "apache-airflow>=3.0.1",
-    "apache-airflow-providers-celery>=3.9.0",
-    "apache-airflow-providers-fab>=2.0.0",
 ]
 
 [tool.pytest.ini_options]
