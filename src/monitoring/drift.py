@@ -3,20 +3,15 @@ Data drift detection using Evidently.
 
 This module provides drift detection capabilities for monitoring
 data distribution changes between reference and production data.
+
+Compatible with Evidently 0.7.0+
 """
 
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Any
-from evidently import ColumnMapping
-from evidently.report import Report
-from evidently.metric_preset import DataDriftPreset, TargetDriftPreset
-from evidently.metrics import (
-    DataDriftTable,
-    DatasetDriftMetric,
-    ColumnDriftMetric,
-)
-import json
+from evidently import Report, Dataset, DataDefinition
+from evidently.presets import DataDriftPreset
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -35,6 +30,8 @@ class DriftDetector:
     - Analyze current data for drift
     - Generate drift reports
     - Update Prometheus metrics with drift scores
+    
+    Compatible with Evidently 0.7.0+
     """
     
     # Feature columns for drift detection
@@ -69,15 +66,31 @@ class DriftDetector:
         self.reports_dir = Path(reports_dir) if reports_dir else Path("logs/drift_reports")
         self.reports_dir.mkdir(parents=True, exist_ok=True)
         
-        # Configure column mapping for Evidently
-        self.column_mapping = ColumnMapping(
-            numerical_features=self.NUMERICAL_FEATURES,
-            categorical_features=self.CATEGORICAL_FEATURES,
-        )
-        
         # Buffer for collecting current data
         self._current_buffer: List[Dict[str, Any]] = []
         self._buffer_size = 100  # Analyze drift every N predictions
+    
+    def _create_dataset(self, df: pd.DataFrame) -> Dataset:
+        """
+        Create an Evidently Dataset from a pandas DataFrame.
+        
+        Args:
+            df: pandas DataFrame
+            
+        Returns:
+            Evidently Dataset object
+        """
+        available_num = [col for col in self.NUMERICAL_FEATURES if col in df.columns]
+        available_cat = [col for col in self.CATEGORICAL_FEATURES if col in df.columns]
+        available_cols = available_num + available_cat
+        
+        # Create DataDefinition with explicit column types
+        data_definition = DataDefinition(
+            numerical_columns=available_num,
+            categorical_columns=available_cat
+        )
+        
+        return Dataset.from_pandas(df[available_cols], data_definition=data_definition)
     
     def set_reference_data(self, data: pd.DataFrame):
         """
@@ -160,51 +173,55 @@ class DriftDetector:
         
         current_data = current_data[self.reference_data.columns]
         
+        # Create Evidently datasets
+        ref_dataset = self._create_dataset(self.reference_data)
+        cur_dataset = self._create_dataset(current_data)
+        
         # Create and run Evidently report
-        report = Report(metrics=[
-            DatasetDriftMetric(),
-            DataDriftTable(),
-        ])
+        report = Report([DataDriftPreset()])
         
         try:
-            report.run(
-                reference_data=self.reference_data,
-                current_data=current_data,
-                column_mapping=self.column_mapping
-            )
+            # Evidently 0.7.0+: run(current_data, reference_data) returns a Snapshot
+            snapshot = report.run(cur_dataset, ref_dataset)
         except Exception as e:
             logger.error(f"Error running drift analysis: {e}")
             return {"error": str(e)}
         
-        # Extract results
-        result = report.as_dict()
+        # Extract results from snapshot
+        result = snapshot.dict()
         
-        # Parse drift metrics
-        dataset_drift = result.get("metrics", [{}])[0].get("result", {})
-        drift_table = result.get("metrics", [{}])[1].get("result", {}) if len(result.get("metrics", [])) > 1 else {}
-        
-        overall_drift_share = dataset_drift.get("share_of_drifted_columns", 0.0)
-        is_drift_detected = dataset_drift.get("dataset_drift", False)
-        
-        # Extract per-feature drift
+        # Parse drift metrics from Evidently 0.7.0 format
+        overall_drift_share = 0.0
+        is_drift_detected = False
         feature_drifts = {}
-        drift_by_columns = drift_table.get("drift_by_columns", {})
-        for feature, info in drift_by_columns.items():
-            if isinstance(info, dict):
-                feature_drifts[feature] = info.get("drift_score", 0.0)
+        
+        # Navigate the result structure to extract metrics
+        metrics = result.get("metrics", [])
+        for metric in metrics:
+            metric_result = metric.get("result", {})
+            if "share_of_drifted_columns" in metric_result:
+                overall_drift_share = metric_result.get("share_of_drifted_columns", 0.0)
+                is_drift_detected = metric_result.get("dataset_drift", False)
+            if "drift_by_columns" in metric_result:
+                for feature, info in metric_result.get("drift_by_columns", {}).items():
+                    if isinstance(info, dict):
+                        feature_drifts[feature] = info.get("drift_score", 0.0)
         
         # Save HTML report
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_path = self.reports_dir / f"drift_report_{timestamp}.html"
-        report.save_html(str(report_path))
+        snapshot.save_html(str(report_path))
         
         # Update Prometheus metrics
-        metrics_collector = get_metrics_collector()
-        metrics_collector.update_drift_metrics(
-            overall_drift=overall_drift_share,
-            feature_drifts=feature_drifts,
-            is_drift_detected=is_drift_detected
-        )
+        try:
+            metrics_collector = get_metrics_collector()
+            metrics_collector.update_drift_metrics(
+                overall_drift=overall_drift_share,
+                feature_drifts=feature_drifts,
+                is_drift_detected=is_drift_detected
+            )
+        except Exception as e:
+            logger.warning(f"Could not update Prometheus metrics: {e}")
         
         # Clear buffer
         self._current_buffer = []
@@ -241,23 +258,24 @@ class DriftDetector:
         if self.reference_data is None:
             raise ValueError("Reference data must be set before generating report")
         
-        metrics = [DataDriftPreset()]
+        # Filter data to only include columns that exist in both
+        available_cols = [col for col in self.reference_data.columns if col in current_data.columns]
+        current_data_filtered = current_data[available_cols].copy()
+        reference_data_filtered = self.reference_data[available_cols].copy()
         
-        if include_target_drift and target_column:
-            self.column_mapping.target = target_column
-            metrics.append(TargetDriftPreset())
+        # Create Evidently datasets
+        ref_dataset = self._create_dataset(reference_data_filtered)
+        cur_dataset = self._create_dataset(current_data_filtered)
         
-        report = Report(metrics=metrics)
+        # Use DataDriftPreset for comprehensive report
+        report = Report([DataDriftPreset()])
         
-        report.run(
-            reference_data=self.reference_data,
-            current_data=current_data,
-            column_mapping=self.column_mapping
-        )
+        # Evidently 0.7.0+: run(current_data, reference_data) returns a Snapshot
+        snapshot = report.run(cur_dataset, ref_dataset)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_path = self.reports_dir / f"full_drift_report_{timestamp}.html"
-        report.save_html(str(report_path))
+        snapshot.save_html(str(report_path))
         
         logger.info(f"Full drift report saved to {report_path}")
         

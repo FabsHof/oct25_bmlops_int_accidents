@@ -767,6 +767,153 @@ def clear_preprocessed_data(conn: connection) -> None:
         cursor.close()
 
 
+def load_raw_data_for_num_accs(conn: connection, num_acc_list: list) -> Dict[str, pd.DataFrame]:
+    """
+    Load raw data from database tables for specific num_acc values.
+    
+    Args:
+        conn: Database connection
+        num_acc_list: List of num_acc values to load
+        
+    Returns:
+        Dictionary containing DataFrames for each table
+    """
+    logging.info(f"Loading raw data for {len(num_acc_list)} num_acc values...")
+    
+    # Convert list to tuple for SQL IN clause
+    num_acc_tuple = tuple(num_acc_list)
+    
+    # For tables that use num_acc
+    tables_with_num_acc = {
+        'caracteristics': f'SELECT * FROM raw_caracteristics WHERE num_acc IN %s',
+        'places': f'SELECT * FROM raw_places WHERE num_acc IN %s',
+        'users': f'SELECT * FROM raw_users WHERE num_acc IN %s',
+        'vehicles': f'SELECT * FROM raw_vehicles WHERE num_acc IN %s'
+    }
+    
+    dataframes = {}
+    
+    for table_name, query in tables_with_num_acc.items():
+        try:
+            df = pd.read_sql_query(query, conn, params=(num_acc_tuple,))
+            logging.info(f"Loaded {len(df)} rows from {table_name}")
+            dataframes[table_name] = df
+        except Exception as e:
+            logging.error(f"Error loading {table_name}: {e}")
+            raise
+    
+    # Holidays table doesn't have num_acc, load once (it's small)
+    try:
+        df = pd.read_sql_query('SELECT * FROM raw_holidays', conn)
+        logging.info(f"Loaded {len(df)} rows from holidays")
+        dataframes['holidays'] = df
+    except Exception as e:
+        logging.error(f"Error loading holidays: {e}")
+        raise
+    
+    return dataframes
+
+
+def transform_data_chunked(clear_existing: bool = False, chunk_size: int = 10000) -> Dict[str, Any]:
+    """
+    Transform raw data into clean preprocessed data using chunked processing.
+    
+    This function processes data in chunks based on num_acc batches to avoid
+    memory issues with large datasets.
+    
+    Args:
+        clear_existing: Whether to clear existing preprocessed data before inserting
+        chunk_size: Number of num_acc values to process per chunk
+        
+    Returns:
+        Dictionary with transformation results
+    """
+    logging.info(f"Starting chunked data transformation (chunk_size={chunk_size})...")
+    
+    conn = get_db_connection()
+    
+    try:
+        # Step 1: Clear existing clean data if requested
+        if clear_existing:
+            clear_preprocessed_data(conn)
+        
+        # Step 2: Get all unique num_acc values from raw_caracteristics
+        logging.info("Fetching unique num_acc values...")
+        num_acc_df = pd.read_sql_query(
+            'SELECT DISTINCT num_acc FROM raw_caracteristics ORDER BY num_acc',
+            conn
+        )
+        all_num_accs = num_acc_df['num_acc'].tolist()
+        total_num_accs = len(all_num_accs)
+        logging.info(f"Found {total_num_accs} unique num_acc values to process")
+        
+        if total_num_accs == 0:
+            logging.warning("No data found to transform")
+            return {
+                'success': True,
+                'rows_processed': 0,
+                'rows_inserted': 0,
+                'rows_updated': 0,
+                'rows_unchanged': 0,
+                'message': 'No data to transform'
+            }
+        
+        # Step 3: Process in chunks
+        total_processed = 0
+        total_inserted = 0
+        total_updated = 0
+        total_unchanged = 0
+        chunks_processed = 0
+        
+        for i in range(0, total_num_accs, chunk_size):
+            chunk_num_accs = all_num_accs[i:i + chunk_size]
+            chunks_processed += 1
+            
+            logging.info(f"Processing chunk {chunks_processed}: num_acc {i+1} to {min(i+chunk_size, total_num_accs)}")
+            
+            # Load raw data for this chunk
+            dataframes = load_raw_data_for_num_accs(conn, chunk_num_accs)
+            
+            # Transform data
+            transformed_df = transform_data_pipeline(dataframes)
+            
+            if len(transformed_df) > 0:
+                # Insert clean data with SCD Type 2
+                result_counts = insert_preprocessed_data(conn, transformed_df)
+                
+                total_processed += len(transformed_df)
+                total_inserted += result_counts['inserted']
+                total_updated += result_counts['updated']
+                total_unchanged += result_counts['unchanged']
+            
+            logging.info(f"Chunk {chunks_processed} complete: {len(transformed_df)} rows processed")
+        
+        logging.info("Chunked data transformation completed successfully!")
+        logging.info(f"Summary: {total_inserted} inserted, {total_updated} updated, {total_unchanged} unchanged")
+        
+        return {
+            'success': True,
+            'rows_processed': total_processed,
+            'rows_inserted': total_inserted,
+            'rows_updated': total_updated,
+            'rows_unchanged': total_unchanged,
+            'chunks_processed': chunks_processed,
+            'message': 'Data transformation completed successfully'
+        }
+        
+    except Exception as e:
+        logging.error(f"Error during chunked data transformation: {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'message': 'Data transformation failed'
+        }
+    finally:
+        if conn:
+            conn.close()
+            logging.info("Database connection closed")
+
+
 def transform_data(clear_existing: bool = False) -> Dict[str, Any]:
     """
     Main function to transform raw data into clean preprocessed data.

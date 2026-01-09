@@ -370,9 +370,6 @@ def load_next_chunk(raw_data_path: Optional[str] = None, chunk_size: int = DEFAU
         results = {}
         all_complete = True
         
-        # Check if caracteristics is complete before loading dependent tables
-        caracteristics_complete = progress.get('caracteristics', {}).get('is_complete', False)
-        
         for table_name in load_order:
             if table_name not in progress:
                 logging.warning(f"No progress tracking for {table_name}, skipping")
@@ -385,16 +382,6 @@ def load_next_chunk(raw_data_path: Optional[str] = None, chunk_size: int = DEFAU
                     'loaded': 0,
                     'message': 'Already complete',
                     'progress_percentage': 100
-                }
-                continue
-            
-            # Skip dependent tables if caracteristics is not complete
-            # This prevents foreign key violations
-            if table_name in ['places', 'users', 'vehicles'] and not caracteristics_complete:
-                results[table_name] = {
-                    'loaded': 0,
-                    'message': 'Waiting for caracteristics to complete',
-                    'progress_percentage': table_progress['progress_percentage']
                 }
                 continue
             

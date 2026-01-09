@@ -154,59 +154,67 @@ def accidents_data_pipeline():
                 raise
         
         else:
-            # Chunked loading - loads data in chunks
-            total_records = {
-                'caracteristics': 0,
-                'places': 0,
-                'users': 0,
-                'vehicles': 0,
-                'holidays': 0
-            }
-            chunks_processed = 0
-            all_complete = False
+            # Chunked loading - loads ONE chunk of data per DAG run
+            # Run the DAG multiple times to load all data incrementally
+            logging.info(f'Loading next chunk (size={chunk_size})...')
             
-            while not all_complete:
-                result = load_next_chunk(chunk_size=chunk_size)
-                
-                if not result.get('success', False):
-                    error_msg = result.get('message', 'Unknown error')
-                    if 'complete' in error_msg.lower() or 'no more' in error_msg.lower():
-                        all_complete = True
-                        break
-                    raise Exception(f"Ingestion failed: {error_msg}")
-                
-                tables = result.get('tables', {})
-                for table, table_result in tables.items():
-                    # table_result is a dict with 'loaded', 'total_loaded', etc.
-                    loaded_count = table_result.get('loaded', 0) if isinstance(table_result, dict) else table_result
-                    total_records[table] = total_records.get(table, 0) + loaded_count
-                
-                chunks_processed += 1
-                all_complete = result.get('all_complete', False)
-                
-                logging.info(f'Chunk {chunks_processed} processed: {[(t, r.get("loaded", 0) if isinstance(r, dict) else r) for t, r in tables.items()]}')
+            result = load_next_chunk(chunk_size=chunk_size)
             
-            logging.info(f'Data ingestion completed. Total: {total_records}')
+            if not result.get('success', False):
+                error_msg = result.get('message', 'Unknown error')
+                raise Exception(f"Ingestion failed: {error_msg}")
+            
+            tables = result.get('tables', {})
+            all_complete = result.get('all_complete', False)
+            
+            # Build records summary from result
+            total_records = {}
+            for table, table_result in tables.items():
+                if isinstance(table_result, dict):
+                    total_records[table] = {
+                        'loaded': table_result.get('loaded', 0),
+                        'total_loaded': table_result.get('total_loaded', 0),
+                        'progress': table_result.get('progress_percentage', 0)
+                    }
+                else:
+                    total_records[table] = {'loaded': table_result}
+            
+            logging.info(f'Chunk loaded: {[(t, r.get("loaded", 0)) for t, r in total_records.items()]}')
+            
+            if all_complete:
+                logging.info('All data has been loaded!')
+            else:
+                logging.info('Run the DAG again to load the next chunk.')
             
             return {
                 'status': 'success',
                 'mode': 'chunked',
-                'chunks_processed': chunks_processed,
+                'all_complete': all_complete,
                 'total_records': total_records,
                 'download_timestamp': download_result.get('timestamp')
             }
 
     @task()
-    def clean_data(ingest_result: Dict[str, Any]) -> Dict[str, Any]:
+    def clean_data(ingest_result: Dict[str, Any], **context) -> Dict[str, Any]:
         """Clean and transform raw data using SCD Type 2 logic."""
         from src.utils import logging
         from src.utils.database import get_db_connection
-        from src.data.clean_data import transform_data
+        from src.data.clean_data import transform_data, transform_data_chunked
         
-        logging.info('Starting data cleaning and transformation...')
-        logging.info(f'Processing {ingest_result.get("chunks_processed")} chunks of data')
+        # Get loading mode from DAG params
+        params = context.get('params', {})
+        loading_mode = params.get('loading_mode', 'chunked')
+        chunk_size = params.get('chunk_size', 10000)
         
-        result = transform_data(clear_existing=False)
+        logging.info(f'Starting data cleaning and transformation ({loading_mode} mode)...')
+        
+        if loading_mode == 'chunked':
+            # Use chunked processing to avoid memory issues
+            logging.info(f'Using chunked transformation (chunk_size={chunk_size})')
+            result = transform_data_chunked(clear_existing=False, chunk_size=chunk_size)
+        else:
+            # Full mode - process all at once
+            result = transform_data(clear_existing=False)
         
         if not result.get('success', False):
             raise Exception(f"Data transformation failed: {result.get('error', 'Unknown error')}")
