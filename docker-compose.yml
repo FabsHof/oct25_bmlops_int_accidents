@@ -41,10 +41,10 @@ x-airflow-common:
     RAW_DATA_PATH: ${RAW_DATA_PATH}
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
   volumes:
-    - ./dags:/opt/airflow/dags
-    - ./airflow/logs:/opt/airflow/logs
-    - ./airflow/config:/opt/airflow/config
-    - ./airflow/plugins:/opt/airflow/plugins
+    - airflow_dags:/opt/airflow/dags
+    - airflow_logs:/opt/airflow/logs
+    - airflow_config:/opt/airflow/config
+    - airflow_plugins:/opt/airflow/plugins
     - ./data:/app/data
     - ./src:/app/src
   user: "${AIRFLOW_UID:-50000}:0"
@@ -190,46 +190,30 @@ services:
   airflow-init:
     <<: *airflow-common
     container_name: airflow_init_container
-    entrypoint: /bin/bash
+    entrypoint: /entrypoint
     command:
+      - bash
       - -c
       - |
-        if [[ -z "${AIRFLOW_UID}" ]]; then
-          echo
-          echo -e "\033[1;33mWARNING: AIRFLOW_UID not set! Using default.\e[0m"
-          export AIRFLOW_UID=$$(id -u)
+        set -e
+        INIT_FLAG=$${INIT_FLAG:-/opt/airflow/logs/.init_done}
+        INIT_DIR=$$(dirname "$${INIT_FLAG}")
+        mkdir -p "$${INIT_DIR}"
+        if [ -f "$${INIT_FLAG}" ]; then
+          echo "Init already done, skipping."
+          exit 0
         fi
-        
-        # Create directories
-        mkdir -p /opt/airflow/{logs,dags,plugins,config}
-        
-        # Quick version check (no verbose output)
-        /entrypoint airflow version >/dev/null 2>&1
-        
-        # Only run migrations if needed (check if already initialized)
-        if ! /entrypoint airflow db check >/dev/null 2>&1; then
-          echo "Running database migrations..."
-          /entrypoint airflow db migrate
-        else
-          echo "Database already initialized, skipping migrations"
-        fi
-        
-        # Only create user if it doesn't exist
-        if ! /entrypoint airflow users list 2>/dev/null | grep -q "${_AIRFLOW_WWW_USER_USERNAME:-airflow}"; then
-          echo "Creating admin user..."
-          /entrypoint airflow users create \
-            --username "${_AIRFLOW_WWW_USER_USERNAME:-airflow}" \
-            --password "${_AIRFLOW_WWW_USER_PASSWORD:-airflow}" \
-            --firstname Admin \
-            --lastname User \
-            --role Admin \
-            --email admin@example.com
-        else
-          echo "Admin user already exists, skipping creation"
-        fi
-        
-        # Fast ownership change (only if needed, no verbose output)
-        chown -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config} 2>/dev/null || true
+
+        airflow db migrate
+        airflow users create \
+          --username "$${_AIRFLOW_WWW_USER_USERNAME:-airflow}" \
+          --password "$${_AIRFLOW_WWW_USER_PASSWORD:-airflow}" \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+
+        touch "$${INIT_FLAG}"
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'false'  # We handle this manually now
@@ -471,6 +455,10 @@ volumes:
   minio_data:
   prometheus_data:
   grafana_data:
+  airflow_dags:
+  airflow_logs:
+  airflow_config:
+  airflow_plugins:
 networks:
   airflow_network:
   mlflow_network:

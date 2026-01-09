@@ -9,11 +9,6 @@ test:
 # ==============================
 # Airflow targets
 # ==============================
-airflow-setup:
-	@echo ">>> Setting up Airflow environment..."
-	@chmod +x ./scripts/airflow-setup.sh
-	@./scripts/airflow-setup.sh
-
 airflow-init:
 	@echo ">>> Initializing Airflow database..."
 	@docker compose up airflow-init
@@ -31,7 +26,6 @@ airflow-down:
 # ==============================
 # General targets
 # ==============================
-setup: airflow-setup
 up: 
 	docker compose up -d
 down: 
