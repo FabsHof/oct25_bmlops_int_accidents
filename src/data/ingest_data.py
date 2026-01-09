@@ -82,12 +82,17 @@ def find_latest_csv_directory(raw_data_path: str) -> Optional[Path]:
     csv_dirs = []
     for date_dir in raw_path.iterdir():
         if date_dir.is_dir():
-            # Check subdirectories for CSV files
-            for subdir in date_dir.iterdir():
-                if subdir.is_dir():
-                    csv_files = list(subdir.glob("*.csv"))
-                    if csv_files:
-                        csv_dirs.append(subdir)
+            # First check if the date_dir itself has CSV files
+            csv_files = list(date_dir.glob("*.csv"))
+            if csv_files:
+                csv_dirs.append(date_dir)
+            else:
+                # Check subdirectories for CSV files
+                for subdir in date_dir.iterdir():
+                    if subdir.is_dir():
+                        csv_files = list(subdir.glob("*.csv"))
+                        if csv_files:
+                            csv_dirs.append(subdir)
     
     if not csv_dirs:
         logging.warning(f"No directories with CSV files found in {raw_data_path}")
@@ -315,6 +320,12 @@ def load_next_chunk(raw_data_path: Optional[str] = None, chunk_size: int = DEFAU
     conn = get_db_connection()
     
     try:
+        # Disable foreign key constraints for bulk loading
+        cursor = conn.cursor()
+        cursor.execute("SET session_replication_role = 'replica';")
+        cursor.close()
+        logging.info("Foreign key constraints temporarily disabled for bulk loading")
+        
         # Get current progress
         progress = get_progress_status(conn)
         
@@ -359,6 +370,9 @@ def load_next_chunk(raw_data_path: Optional[str] = None, chunk_size: int = DEFAU
         results = {}
         all_complete = True
         
+        # Check if caracteristics is complete before loading dependent tables
+        caracteristics_complete = progress.get('caracteristics', {}).get('is_complete', False)
+        
         for table_name in load_order:
             if table_name not in progress:
                 logging.warning(f"No progress tracking for {table_name}, skipping")
@@ -371,6 +385,16 @@ def load_next_chunk(raw_data_path: Optional[str] = None, chunk_size: int = DEFAU
                     'loaded': 0,
                     'message': 'Already complete',
                     'progress_percentage': 100
+                }
+                continue
+            
+            # Skip dependent tables if caracteristics is not complete
+            # This prevents foreign key violations
+            if table_name in ['places', 'users', 'vehicles'] and not caracteristics_complete:
+                results[table_name] = {
+                    'loaded': 0,
+                    'message': 'Waiting for caracteristics to complete',
+                    'progress_percentage': table_progress['progress_percentage']
                 }
                 continue
             
@@ -424,6 +448,14 @@ def load_next_chunk(raw_data_path: Optional[str] = None, chunk_size: int = DEFAU
             'message': 'Failed to load data chunk'
         }
     finally:
+        # Re-enable foreign key constraints
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SET session_replication_role = 'origin';")
+            cursor.close()
+            conn.commit()
+        except Exception as e:
+            logging.warning(f"Failed to re-enable foreign key constraints: {e}")
         if conn:
             conn.close()
 

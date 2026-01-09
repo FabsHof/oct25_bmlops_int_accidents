@@ -19,7 +19,13 @@ x-airflow-common:
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    # Task execution settings for Airflow 3.x
+    AIRFLOW__CORE__LAZY_LOAD_PLUGINS: 'false'
+    AIRFLOW__CORE__LAZY_DISCOVER_PROVIDERS: 'false'
+    # Add /app to Python path so DAGs can import from src
+    PYTHONPATH: '/app:/opt/airflow'
     # Project-specific environment variables for DAGs
+    ACCIDENTS_POSTGRES_HOST: accidents_db
     ACCIDENTS_POSTGRES_USER: ${ACCIDENTS_POSTGRES_USER}
     ACCIDENTS_POSTGRES_PASSWORD: ${ACCIDENTS_POSTGRES_PASSWORD}
     ACCIDENTS_POSTGRES_DB: ${ACCIDENTS_POSTGRES_DB}
@@ -189,23 +195,46 @@ services:
           echo -e "\033[1;33mWARNING: AIRFLOW_UID not set! Using default.\e[0m"
           export AIRFLOW_UID=$$(id -u)
         fi
-        echo "Creating missing opt dirs if missing:"
-        mkdir -v -p /opt/airflow/{logs,dags,plugins,config}
-        echo "Airflow version:"
-        /entrypoint airflow version
-        echo "Running airflow config list to create default config file if missing."
-        /entrypoint airflow config list >/dev/null
-        echo "Change ownership of files in /opt/airflow to ${AIRFLOW_UID}:0"
-        chown -R "${AIRFLOW_UID}:0" /opt/airflow/
-        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
+        
+        # Create directories
+        mkdir -p /opt/airflow/{logs,dags,plugins,config}
+        
+        # Quick version check (no verbose output)
+        /entrypoint airflow version >/dev/null 2>&1
+        
+        # Only run migrations if needed (check if already initialized)
+        if ! /entrypoint airflow db check >/dev/null 2>&1; then
+          echo "Running database migrations..."
+          /entrypoint airflow db migrate
+        else
+          echo "Database already initialized, skipping migrations"
+        fi
+        
+        # Only create user if it doesn't exist
+        if ! /entrypoint airflow users list 2>/dev/null | grep -q "${_AIRFLOW_WWW_USER_USERNAME:-airflow}"; then
+          echo "Creating admin user..."
+          /entrypoint airflow users create \
+            --username "${_AIRFLOW_WWW_USER_USERNAME:-airflow}" \
+            --password "${_AIRFLOW_WWW_USER_PASSWORD:-airflow}" \
+            --firstname Admin \
+            --lastname User \
+            --role Admin \
+            --email admin@example.com
+        else
+          echo "Admin user already exists, skipping creation"
+        fi
+        
+        # Fast ownership change (only if needed, no verbose output)
+        chown -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config} 2>/dev/null || true
     environment:
       <<: *airflow-common-env
-      _AIRFLOW_DB_MIGRATE: 'true'
-      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_DB_MIGRATE: 'false'  # We handle this manually now
+      _AIRFLOW_WWW_USER_CREATE: 'false'  # We handle this manually now
       _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_WWW_USER_USERNAME:-airflow}
       _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_WWW_USER_PASSWORD:-airflow}
       _PIP_ADDITIONAL_REQUIREMENTS: ''
     user: "0:0"
+    restart: on-failure
 
   airflow-cli:
     <<: *airflow-common
@@ -263,6 +292,7 @@ services:
       retries: 10
     networks:
       - data_network
+      - airflow_network
   mlflow_db:
     image: postgres:18.1
     container_name: mlflow_db_container

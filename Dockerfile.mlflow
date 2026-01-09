@@ -1,5 +1,8 @@
 FROM ghcr.io/mlflow/mlflow:v3.8.1
 
-# TODO: Move to a minimal requirements file
-# Install PostgreSQL client libraries, Python driver, and boto3 for S3/MinIO
-RUN pip install --no-cache-dir psycopg2-binary boto3
+# Install uv for faster Python package installation
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+COPY requirements-mlflow.txt /requirements-mlflow.txt
+
+RUN uv pip install --system --no-cache-dir -r /requirements-mlflow.txt

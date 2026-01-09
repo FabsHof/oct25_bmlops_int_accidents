@@ -1,2 +1,3 @@
 FROM postgres:18.1
+
 COPY scripts/accidents_db_seed.sql /docker-entrypoint-initdb.d/

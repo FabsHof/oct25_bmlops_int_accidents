@@ -34,11 +34,11 @@ airflow-down:
 setup: airflow-setup
 up: 
 	docker compose up -d
-up_build: 
-	docker compose up -d --build
 down: 
 	docker compose down
-down_volumes: 
+build:
+	DOCKER_BUILDKIT=1 docker compose build --parallel
+clean: 
 	docker compose down -v
 logs: 
 	docker compose logs -f

@@ -28,7 +28,7 @@ def get_db_connection() -> connection:
     """
     db_config = {
         'host': os.getenv('ACCIDENTS_POSTGRES_HOST', 'localhost'),
-        'port': os.getenv('ACCIDENTS_POSTGRES_HOST_PORT', '5432'),
+        'port': os.getenv('ACCIDENTS_POSTGRES_PORT', '5432'),
         'database': os.getenv('ACCIDENTS_POSTGRES_DB', 'accidents_db'),
         'user': os.getenv('ACCIDENTS_POSTGRES_USER'),
         'password': os.getenv('ACCIDENTS_POSTGRES_PASSWORD')
