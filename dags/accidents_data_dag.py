@@ -18,20 +18,14 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, Any
 
-import pandas as pd
-import kagglehub as kh
-from dotenv import load_dotenv
-
+# Only import lightweight modules at top level for fast DAG parsing
 from airflow.sdk import dag, task, setup, teardown, Variable
 from airflow.sdk.bases.operator import chain
-
-from src.utils import logging
-from src.utils.database import get_db_connection
+from src.data.ingest_data import DEFAULT_CHUNK_SIZE
 from src.utils.ml_utils import RANDOM_STATE
-from src.data.ingest_data import load_next_chunk, DEFAULT_CHUNK_SIZE
-from src.data.clean_data import transform_data, assign_dataset_splits
 
-load_dotenv()
+# Heavy imports moved inside task functions to speed up DAG parsing
+# Don't import pandas, kagglehub, or custom modules at top level
 
 # ########### Configuration ###########
 TRAIN_RATIO = 0.6
@@ -45,6 +39,10 @@ TEST_RATIO = 0.2
     start_date=datetime(2025, 1, 1),
     catchup=False,
     tags=['mlops', 'accidents', 'data-pipeline', 'etl'],
+    params={
+        "loading_mode": "chunked",  # "chunked" or "full"
+        "chunk_size": DEFAULT_CHUNK_SIZE,  # Only used in chunked mode
+    },
     default_args={
         "owner": "mlops-team",
         "depends_on_past": False,
@@ -60,6 +58,9 @@ def accidents_data_pipeline():
     @setup
     def initialize():
         """Initialize the data pipeline configuration."""
+        from src.utils import logging
+        from src.utils.ml_utils import RANDOM_STATE
+        
         logging.info('Initializing Data Pipeline DAG')
         
         Variable.set('train_ratio', str(TRAIN_RATIO))
@@ -80,6 +81,9 @@ def accidents_data_pipeline():
     @task()
     def download_data() -> Dict[str, Any]:
         """Download raw accident data from Kaggle."""
+        import kagglehub as kh
+        from src.utils import logging
+        
         logging.info('Downloading dataset from Kaggle...')
         
         dataset_id = 'ahmedlahlou/accidents-in-france-from-2005-to-2016'
@@ -116,52 +120,89 @@ def accidents_data_pipeline():
         }
 
     @task()
-    def ingest_data(download_result: Dict[str, Any]) -> Dict[str, Any]:
+    def ingest_data(download_result: Dict[str, Any], **context) -> Dict[str, Any]:
         """Ingest raw CSV data into PostgreSQL database."""
-        logging.info('Starting data ingestion (chunked mode)...')
+        from src.utils import logging
+        from src.data.ingest_data import load_next_chunk, ingest_data_full, DEFAULT_CHUNK_SIZE
+        
+        # Get loading mode from DAG params
+        params = context.get('params', {})
+        loading_mode = params.get('loading_mode', 'chunked')
+        chunk_size = params.get('chunk_size', DEFAULT_CHUNK_SIZE)
+        
+        logging.info(f'Starting data ingestion ({loading_mode} mode)...')
         logging.info(f'Source: {download_result.get("target_path")}')
         
-        total_records = {
-            'caracteristics': 0,
-            'places': 0,
-            'users': 0,
-            'vehicles': 0,
-            'holidays': 0
-        }
-        chunks_processed = 0
-        all_complete = False
+        if loading_mode == 'full':
+            # Full batch loading - loads all data at once
+            logging.info('Loading all data in one batch...')
+            
+            try:
+                results = ingest_data_full(raw_data_path=download_result.get('target_path'))
+                
+                total_records = sum(results.values())
+                logging.info(f'Data ingestion completed. Total records: {total_records}')
+                
+                return {
+                    'status': 'success',
+                    'mode': 'full',
+                    'total_records': results,
+                    'download_timestamp': download_result.get('timestamp')
+                }
+            except Exception as e:
+                logging.error(f'Full batch ingestion failed: {e}')
+                raise
         
-        while not all_complete:
-            result = load_next_chunk(chunk_size=DEFAULT_CHUNK_SIZE)
+        else:
+            # Chunked loading - loads data in chunks
+            total_records = {
+                'caracteristics': 0,
+                'places': 0,
+                'users': 0,
+                'vehicles': 0,
+                'holidays': 0
+            }
+            chunks_processed = 0
+            all_complete = False
             
-            if not result.get('success', False):
-                error_msg = result.get('message', 'Unknown error')
-                if 'complete' in error_msg.lower() or 'no more' in error_msg.lower():
-                    all_complete = True
-                    break
-                raise Exception(f"Ingestion failed: {error_msg}")
+            while not all_complete:
+                result = load_next_chunk(chunk_size=chunk_size)
+                
+                if not result.get('success', False):
+                    error_msg = result.get('message', 'Unknown error')
+                    if 'complete' in error_msg.lower() or 'no more' in error_msg.lower():
+                        all_complete = True
+                        break
+                    raise Exception(f"Ingestion failed: {error_msg}")
+                
+                tables = result.get('tables', {})
+                for table, table_result in tables.items():
+                    # table_result is a dict with 'loaded', 'total_loaded', etc.
+                    loaded_count = table_result.get('loaded', 0) if isinstance(table_result, dict) else table_result
+                    total_records[table] = total_records.get(table, 0) + loaded_count
+                
+                chunks_processed += 1
+                all_complete = result.get('all_complete', False)
+                
+                logging.info(f'Chunk {chunks_processed} processed: {[(t, r.get("loaded", 0) if isinstance(r, dict) else r) for t, r in tables.items()]}')
             
-            tables = result.get('tables', {})
-            for table, count in tables.items():
-                total_records[table] = total_records.get(table, 0) + count
+            logging.info(f'Data ingestion completed. Total: {total_records}')
             
-            chunks_processed += 1
-            all_complete = result.get('all_complete', False)
-            
-            logging.info(f'Chunk {chunks_processed} processed: {tables}')
-        
-        logging.info(f'Data ingestion completed. Total: {total_records}')
-        
-        return {
-            'status': 'success',
-            'chunks_processed': chunks_processed,
-            'total_records': total_records,
-            'download_timestamp': download_result.get('timestamp')
-        }
+            return {
+                'status': 'success',
+                'mode': 'chunked',
+                'chunks_processed': chunks_processed,
+                'total_records': total_records,
+                'download_timestamp': download_result.get('timestamp')
+            }
 
     @task()
     def clean_data(ingest_result: Dict[str, Any]) -> Dict[str, Any]:
         """Clean and transform raw data using SCD Type 2 logic."""
+        from src.utils import logging
+        from src.utils.database import get_db_connection
+        from src.data.clean_data import transform_data
+        
         logging.info('Starting data cleaning and transformation...')
         logging.info(f'Processing {ingest_result.get("chunks_processed")} chunks of data')
         
@@ -188,6 +229,10 @@ def accidents_data_pipeline():
     @task()
     def assign_splits_task(clean_result: Dict[str, Any]) -> Dict[str, Any]:
         """Assign train/validation/test splits using stratified sampling."""
+        from src.utils import logging
+        from src.utils.database import get_db_connection
+        from src.data.clean_data import assign_dataset_splits
+        
         logging.info('Assigning dataset splits (stratified by severity)...')
         
         with get_db_connection() as conn:
@@ -217,6 +262,10 @@ def accidents_data_pipeline():
     @task()
     def validate_data(split_result: Dict[str, Any]) -> Dict[str, Any]:
         """Validate the processed data quality and splits."""
+        import pandas as pd
+        from src.utils import logging
+        from src.utils.database import get_db_connection
+        
         logging.info('Validating processed data...')
         
         with get_db_connection() as conn:
@@ -267,6 +316,8 @@ def accidents_data_pipeline():
     @teardown()
     def finalize():
         """Clean up and finalize the data pipeline."""
+        from src.utils import logging
+        
         logging.info('Finalizing Data Pipeline DAG')
         
         try:
