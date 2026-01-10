@@ -34,126 +34,55 @@ The project is structured as follows:
     │   │
     │   └── config         <- Describe the parameters used in train_model.py and predict_model.py
 
-## Prerequisites
+## 🛫 Prerequisites
 
+> everything that has to be done once before starting development.
+
+0. install Python 3.11 or higher.
 1. install [UV](https://docs.astral.sh/uv/getting-started/installation/).
 2. install [Docker](https://docs.docker.com/get-docker/).
+3. create `.env.example` from `.env`-file and adapt values if needed
 
-## 🚀 Quick start
+## ⌨️ Development Setup
 
-1. Clone this repository and move into the project root.
-2. Create a `.env` file in the root directory (you can start from `.env.example`).
-3. Create a virtual environment and install dependencies (see the "⚙️ Setup" section below):
-   ```bash
-   uv venv create .venv
-   uv sync
+> do this every time you start working on the project.
 
-## ⚙️ Setup
-
-1. Install Python 3.11 or higher.
-2. Install `uv` package manager from [uv package manager](https://uv.dev/).
-3. Set up an environment variables file `.env` in the root directory (e.g., see `.env.example`).
-3. Create a virtual environment:
-   ```bash
-   uv venv create .venv
-   ```
-4. Install dependencies:
+1. sync dependencies and enable virtual environment:
    ```bash
    uv sync
-   ```
-5. Create and update environment variables in `.env` file as needed (see `.env.example`).
-
-## ⌨️ Development
-
-1. Activate the environment:
-   ```bash
    source .venv/bin/activate
    ```
-2. Run the FastAPI application:
+2. start 🐳 Docker containers:
    ```bash
-   make api_dev
-    ```
-3. Access the API documentation at `http://localhost:8000/docs` (find e.g. the API key in the `.env` file, set it via the "Authorize" button in the Swagger UI).
-
-## 📊 Data Ingestion
-
-This project supports two modes of data ingestion:
-
-### Full Batch Loading
-Load all data at once using the traditional ETL process:
-```bash
-make do_etl
-```
-
-### Chunked/Incremental Loading
-Load data in chunks to simulate data evolution over time. This is useful for testing incremental model training and monitoring data arrival patterns.
-
-- **Using Makefile:**
-```bash
-make ingest_data_chunked
-```
-- **Using the script directly:**
-```bash
-python -m src.data.ingest_data --mode chunked --chunk-size 10000
-```
-- **Using the API:**
-
-1. Start the API server:
-   ```bash
-   make api_dev
+   make build  # improved build process
+   make up     # start containers in detached mode
    ```
+3. access services (see default credentials below, change in `.env` file if needed):
+   - **Airflow UI**: `http://localhost:8080` (default credentials: `airflow` / `airflow`)
+   - **Grafana**: `http://localhost:3000` (default credentials: `admin` / `admin`)
+   - **MLflow UI**: `http://localhost:5001` (default credentials: `mlflow` / `mlflow`)
+   - **MinIO UI**: `http://localhost:9000` (default credentials: `mini_user` / `mini_password`)
 
-2. Check ingestion progress:
-   ```bash
-   curl -H "X-API-Key: YOUR_API_KEY" "http://localhost:8000/data/progress"
-   ```
 
-## 🧼 Data Cleaning
+## 🪁 Airflow DAGs
 
-Data cleaning is performed during the transformation step. To run data transformation, use:
-```bash
-make clean_data
-```
-Internally, SCD Type 2 logic is applied to maintain historical records of changes in the data.
+The project includes the following Airflow DAGs for orchestrating workflows:
 
-## 🪈 ETL Pipeline
+- [accidents data dag](./dags/accidents_data_dag.py): Manages chunked or full data ingestion. This allows for simulating data evolution over time.
+- [accidents ml dag](./dags/accidents_ml_dag.py): Handles the machine learning pipeline, including data cleaning, dataset splitting, model training and evaluation.
+- [accidents dag](./dags/accidents_dag.py): Orchestrates the ETL pipeline for data ingestion, cleaning, and model training.
 
-The ETL pipeline can be executed using the following commands:
 
-```bash
-make do_etl_full  # Ingest full data
-make do_etl_chunked  # Ingest next data chunk
-```
+## 📊 Model Training Details
 
-## 🤖 Model Training
-
-The project implements a Random Forest Classifier for predicting accident severity. The training pipeline uses a **static validation dataset** approach for consistent model evaluation.
-
-### Quick Start
-
-1. **Assign dataset splits** (one-time setup):
-   ```bash
-   make assign_splits
-   ```
-
-2. **Train the model**:
-   ```bash
-   make train_model
-   ```
-
-3. **Or run the complete ML pipeline**:
-   ```bash
-   make do_ml_pipeline  # Runs: clean_data → assign_splits → train_model
-   ```
-
-### Validation Strategy
+### 🧪 Validation Strategy
 
 - **Static train/validation/test splits**: 60% / 20% / 20%
 - **Stratified sampling**: Ensures balanced class distribution
 - **Database-tracked**: Split assignments stored in `clean_data.dataset_split` column
 - **Reproducible**: Fixed random seed (42) for consistent splits
 
-### Model & Metrics
+### 🧮 Model & Metrics
 
 - **Model**: Random Forest Classifier with 100 trees
 - **Metrics**: Accuracy, Precision, Recall, F1-score (weighted), ROC-AUC

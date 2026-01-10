@@ -1,27 +1,6 @@
-# ==============================
-# Data targets
-# ==============================
-# TODO: tbc
 
 test:
 	pytest tests/
-
-# ==============================
-# Airflow targets
-# ==============================
-airflow-init:
-	@echo ">>> Initializing Airflow database..."
-	@docker compose up airflow-init
-
-airflow-up:
-	@echo ">>> Starting Airflow services..."
-	@docker compose up -d airflow_db airflow_redis airflow-apiserver airflow-scheduler airflow-dag-processor airflow-worker airflow-triggerer
-	@echo ">>> Airflow services started. Access the UI at http://localhost:8080"
-
-airflow-down:
-	@echo ">>> Stopping Airflow services..."
-	@docker compose stop airflow-apiserver airflow-scheduler airflow-dag-processor airflow-worker airflow-triggerer airflow_redis airflow_db
-	@echo ">>> Airflow services stopped."
 
 # ==============================
 # General targets
