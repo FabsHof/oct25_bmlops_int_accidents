@@ -41,10 +41,10 @@ x-airflow-common:
     RAW_DATA_PATH: ${RAW_DATA_PATH}
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
   volumes:
-    - airflow_dags:/opt/airflow/dags
-    - airflow_logs:/opt/airflow/logs
-    - airflow_config:/opt/airflow/config
-    - airflow_plugins:/opt/airflow/plugins
+    - ./dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/config:/opt/airflow/config
+    - ./airflow/plugins:/opt/airflow/plugins
     - ./data:/app/data
     - ./src:/app/src
   user: "${AIRFLOW_UID:-50000}:0"
@@ -455,10 +455,6 @@ volumes:
   minio_data:
   prometheus_data:
   grafana_data:
-  airflow_dags:
-  airflow_logs:
-  airflow_config:
-  airflow_plugins:
 networks:
   airflow_network:
   mlflow_network:
