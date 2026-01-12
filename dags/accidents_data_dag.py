@@ -21,7 +21,7 @@ from typing import Dict, Any
 # Only import lightweight modules at top level for fast DAG parsing
 from airflow.sdk import dag, task, setup, teardown, Variable
 from airflow.sdk.bases.operator import chain
-from src.data.ingest_data import DEFAULT_CHUNK_SIZE
+from src.data.ingest_data import DEFAULT_CHUNK_SIZE, reset_progress
 from src.utils.ml_utils import RANDOM_STATE
 
 # Heavy imports moved inside task functions to speed up DAG parsing
@@ -120,7 +120,32 @@ def accidents_data_pipeline():
         }
 
     @task()
-    def ingest_data(download_result: Dict[str, Any], **context) -> Dict[str, Any]:
+    def reset_progress_tracking(download_result: Dict[str, Any], **context) -> Dict[str, Any]:
+        """Reset ingestion progress to use the newly downloaded data directory."""
+        from src.utils import logging
+        
+        params = context.get('params', {})
+        chunk_size = params.get('chunk_size', DEFAULT_CHUNK_SIZE)
+        target_path = download_result.get('target_path')
+        
+        logging.info(f'Resetting progress tracking for directory: {target_path}')
+        
+        result = reset_progress(raw_data_path=target_path, chunk_size=chunk_size)
+        
+        if not result.get('success', False):
+            raise Exception(f"Failed to reset progress: {result.get('error', 'Unknown error')}")
+        
+        logging.info('Progress tracking reset successfully')
+        
+        return {
+            'status': 'success',
+            'csv_directory': result.get('csv_directory'),
+            'chunk_size': chunk_size,
+            'download_result': download_result
+        }
+
+    @task()
+    def ingest_data(reset_result: Dict[str, Any], **context) -> Dict[str, Any]:
         """Ingest raw CSV data into PostgreSQL database."""
         from src.utils import logging
         from src.data.ingest_data import load_next_chunk, ingest_data_full, DEFAULT_CHUNK_SIZE
@@ -129,6 +154,7 @@ def accidents_data_pipeline():
         params = context.get('params', {})
         loading_mode = params.get('loading_mode', 'chunked')
         chunk_size = params.get('chunk_size', DEFAULT_CHUNK_SIZE)
+        download_result = reset_result.get('download_result', {})
         
         logging.info(f'Starting data ingestion ({loading_mode} mode)...')
         logging.info(f'Source: {download_result.get("target_path")}')
@@ -344,13 +370,14 @@ def accidents_data_pipeline():
     # ==============================
     init_task = initialize()
     download_task = download_data()
-    ingest_task = ingest_data(download_task)
+    reset_task = reset_progress_tracking(download_task)
+    ingest_task = ingest_data(reset_task)
     clean_task = clean_data(ingest_task)
     split_task = assign_splits_task(clean_task)
     validate_task = validate_data(split_task)
     final_task = finalize()
     
-    chain(init_task, download_task, ingest_task, clean_task, split_task, validate_task, final_task)
+    chain(init_task, download_task, reset_task, ingest_task, clean_task, split_task, validate_task, final_task)
 
 
 accidents_data_pipeline()

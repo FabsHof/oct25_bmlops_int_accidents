@@ -200,27 +200,21 @@ def update_progress(conn: connection, table_name: str, rows_loaded: int) -> None
 
 def reset_progress(conn: connection, csv_dir: Path, chunk_size: int = 1000) -> None:
     """
-    Reset the progress tracking to start from the beginning.
+    Start a new ingestion cycle by initializing progress tracking with the next version number.
+    Does not delete any existing data - just adds new rows for the new version.
     
     Args:
         conn: Database connection
         csv_dir: Directory containing CSV files
         chunk_size: Number of rows to load per chunk
     """
-    logging.info("Resetting data ingestion progress...")
+    logging.info("Starting new ingestion cycle...")
     
     try:
-        # Delete existing progress
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM data_ingestion_progress")
-        conn.commit()
-        cursor.close()
-        
-        # Re-initialize
+        # Initialize with next version number (no deletion, just append new rows)
         initialize_progress_tracking(conn, csv_dir, chunk_size)
-        
-        logging.info("Progress reset successfully")
+        logging.info("New ingestion cycle initialized")
         
     except Exception as e:
-        logging.error(f"Error resetting progress: {e}")
+        logging.error(f"Error starting new ingestion cycle: {e}")
         raise

@@ -449,16 +449,16 @@ def load_next_chunk(raw_data_path: Optional[str] = None, chunk_size: int = DEFAU
 
 def reset_progress(raw_data_path: Optional[str] = None, chunk_size: int = DEFAULT_CHUNK_SIZE) -> Dict[str, Any]:
     """
-    Reset the progress tracking to start from the beginning.
+    Start a new ingestion cycle for the specified data directory.
     
     Args:
-        raw_data_path: Path to raw data directory (uses env var DATA_RAW_PATH if not provided)
+        raw_data_path: Path to specific data directory or base path to search (uses env var RAW_DATA_PATH if not provided)
         chunk_size: Number of rows to load per chunk
         
     Returns:
         Dictionary with reset status
     """
-    logging.info("Resetting data ingestion progress...")
+    logging.info("Starting new ingestion cycle...")
     
     # Get raw data path from argument or environment variable
     if raw_data_path is None:
@@ -467,12 +467,19 @@ def reset_progress(raw_data_path: Optional[str] = None, chunk_size: int = DEFAUL
     conn = get_db_connection()
     
     try:
-        # Find CSV directory
-        csv_dir = find_latest_csv_directory(raw_data_path)
-        if csv_dir is None:
-            raise ValueError(f"No CSV files found in {raw_data_path}")
+        # Check if raw_data_path is a specific directory with CSV files
+        csv_dir = Path(raw_data_path)
+        csv_files = list(csv_dir.glob("*.csv"))
         
-        # Reset progress
+        if not csv_files:
+            # No CSV files found directly, search for latest directory
+            csv_dir = find_latest_csv_directory(raw_data_path)
+            if csv_dir is None:
+                raise ValueError(f"No CSV files found in {raw_data_path}")
+        
+        logging.info(f"Using CSV directory: {csv_dir}")
+        
+        # Initialize progress with new version
         db_reset_progress(conn, csv_dir, chunk_size)
         
         return {

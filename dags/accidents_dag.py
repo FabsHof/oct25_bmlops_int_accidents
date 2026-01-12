@@ -16,6 +16,7 @@ from typing import Dict, Any
 from airflow.sdk import dag, task, setup, teardown, Variable
 from airflow.sdk.bases.operator import chain
 from airflow.utils.task_group import TaskGroup
+from src.data.ingest_data import reset_progress
 
 TRAIN_RATIO = 0.6
 VAL_RATIO = 0.2
@@ -110,13 +111,40 @@ def accidents_pipeline():
         }
 
     @task()
-    def ingest_data(download_result: Dict[str, Any], **context) -> Dict[str, Any]:
+    def reset_progress_tracking(download_result: Dict[str, Any], **context) -> Dict[str, Any]:
+        """Reset ingestion progress to use the newly downloaded data directory."""
+        from src.utils import logging
+        from src.data.ingest_data import DEFAULT_CHUNK_SIZE
+        
+        params = context.get('params', {})
+        chunk_size = params.get('chunk_size', DEFAULT_CHUNK_SIZE)
+        target_path = download_result.get('target_path')
+        
+        logging.info(f'Resetting progress tracking for directory: {target_path}')
+        
+        result = reset_progress(raw_data_path=target_path, chunk_size=chunk_size)
+        
+        if not result.get('success', False):
+            raise Exception(f"Failed to reset progress: {result.get('error', 'Unknown error')}")
+        
+        logging.info('Progress tracking reset successfully')
+        
+        return {
+            'status': 'success',
+            'csv_directory': result.get('csv_directory'),
+            'chunk_size': chunk_size,
+            'download_result': download_result
+        }
+
+    @task()
+    def ingest_data(reset_result: Dict[str, Any], **context) -> Dict[str, Any]:
         from src.utils import logging
         from src.data.ingest_data import load_next_chunk, ingest_data_full, DEFAULT_CHUNK_SIZE
 
         params = context.get('params', {})
         loading_mode = params.get('loading_mode', 'chunked')
         chunk_size = params.get('chunk_size', DEFAULT_CHUNK_SIZE)
+        download_result = reset_result.get('download_result', {})
 
         logging.info(f'Starting data ingestion ({loading_mode} mode)...')
         logging.info(f'Source: {download_result.get("target_path")}')
@@ -538,14 +566,14 @@ def accidents_pipeline():
                 logging.info('Evaluating on validation set...')
                 val_result = mlflow.models.evaluate(
                     model_uri, val_dataset, model_type="classifier",
-                    evaluator_config={'log_explainer': True},
+                    evaluator_config={'log_explainer': False},
                     extra_metrics=extra_metrics
                 )
 
                 logging.info('Evaluating on test set...')
                 test_result = mlflow.models.evaluate(
                     model_uri, test_dataset, model_type="classifier",
-                    evaluator_config={'log_explainer': True},
+                    evaluator_config={'log_explainer': False},
                     extra_metrics=extra_metrics
                 )
 
@@ -608,14 +636,19 @@ def accidents_pipeline():
             test_dataset=test_dataset
         )
 
+        # Pass through parent_run_id for downstream tasks
+        result['parent_run_id'] = evaluation_result.get('parent_run_id')
+
         return result
 
     @task()
     def generate_drift_report(registration_result: Dict[str, Any]) -> Dict[str, Any]:
         import os
         from pathlib import Path
+        import mlflow
         from src.utils import logging
         from src.utils.ml_utils import (
+            setup_mlflow_tracking,
             load_training_data_from_db,
             prepare_features_and_target
         )
@@ -641,6 +674,21 @@ def accidents_pipeline():
             current_data=X_test,
             include_target_drift=False
         )
+
+        setup_mlflow_tracking()
+
+        parent_run_id = registration_result.get('parent_run_id')
+
+        # Resume parent run and create nested drift run
+        if parent_run_id:
+            with mlflow.start_run(run_id=parent_run_id):
+                with mlflow.start_run(run_name='drift_detection', nested=True):
+                    mlflow.log_metric('reference_samples', len(X_train))
+                    mlflow.log_metric('current_samples', len(X_test))
+                    mlflow.log_artifact(report_path, 'drift')
+                    logging.info(f'Drift report logged to MLflow: {report_path}')
+        else:
+            logging.warning('No parent_run_id found, skipping MLflow logging for drift report')
 
         drift_info = {
             'report_path': report_path,
@@ -751,13 +799,14 @@ def accidents_pipeline():
     with TaskGroup(group_id="data_pipeline", tooltip="Flow from accidents_data_dag.py") as data_pipeline_group:
         data_init = initialize_data()
         download = download_data()
-        ingest = ingest_data(download)
+        reset = reset_progress_tracking(download)
+        ingest = ingest_data(reset)
         clean = clean_data(ingest)
         split = assign_splits_task(clean)
         validate = validate_data(split)
         data_done = finalize_data()
 
-        chain(data_init, download, ingest, clean, split, validate, data_done)
+        chain(data_init, download, reset, ingest, clean, split, validate, data_done)
 
     with TaskGroup(group_id="ml_pipeline", tooltip="Flow from accidents_ml_dag.py") as ml_pipeline_group:
         ml_init = initialize_ml()
