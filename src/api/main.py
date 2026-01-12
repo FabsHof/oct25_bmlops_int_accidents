@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Dict, Optional
 from dotenv import load_dotenv
+import mlflow
 
 from fastapi.security import OAuth2PasswordRequestForm
 from src.auth.security import get_current_user, create_access_token, authenticate_user
@@ -11,9 +12,13 @@ from src.auth.schemas import Token
 # Load environment variables
 load_dotenv()
 
-from src.models.predict_model import (
-    AccidentSeverityPredictor,
-    get_best_model_dir
+from src.models.predict_model import AccidentSeverityPredictor
+from src.utils.ml_utils import (
+    MODEL_NAME,
+    CHAMPION_MODEL_ALIAS,
+    FEATURE_COLUMNS,
+    CLASS_LABELS,
+    setup_mlflow_tracking,
 )
 
 
@@ -93,10 +98,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-
-
-# Global variable to cache the predictor
-_predictor: Optional[AccidentSeverityPredictor] = None
+@app.on_event("startup")
+def startup_event():
+    """Initialize MLflow tracking on application startup."""
+    setup_mlflow_tracking()
 
 @app.post("/token", response_model=Token)
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -115,8 +120,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
         "token_type": "bearer"
     }
 
-
-
 def get_predictor() -> AccidentSeverityPredictor:
     """
     Get or initialize the predictor with the best available model.
@@ -127,26 +130,30 @@ def get_predictor() -> AccidentSeverityPredictor:
     Raises:
         HTTPException: If no model is available
     """
-    global _predictor
+    champion_uri = f"models:/{MODEL_NAME}@{CHAMPION_MODEL_ALIAS}"
+
+    try:
+        model_info = mlflow.models.get_model_info(champion_uri)
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="No trained model available. Please train a model first."
+        )
+
+    try:
+        predictor = AccidentSeverityPredictor.from_mlflow_model(
+            champion_uri,
+            model_version=str(model_info.version) if getattr(model_info, "version", None) else None,
+            class_labels=CLASS_LABELS,
+            fallback_feature_names=FEATURE_COLUMNS,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load model: {str(e)}"
+        )
     
-    if _predictor is None:
-        model_dir = get_best_model_dir()
-        
-        if model_dir is None:
-            raise HTTPException(
-                status_code=503,
-                detail="No trained model available. Please train a model first."
-            )
-        
-        try:
-            _predictor = AccidentSeverityPredictor(model_dir)
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to load model: {str(e)}"
-            )
-    
-    return _predictor
+    return predictor
 
 @app.get('/')
 def read_root():

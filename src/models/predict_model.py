@@ -18,6 +18,7 @@ import pandas as pd
 import joblib
 import numpy as np
 import os
+import mlflow
 
 from src.utils import logging
 
@@ -97,6 +98,53 @@ class AccidentSeverityPredictor:
     This class handles loading the trained model and making predictions
     on new input data.
     """
+
+    @classmethod
+    def from_mlflow_model(
+        cls,
+        model_uri: str,
+        *,
+        model_version: Optional[str] = None,
+        class_labels: Optional[Dict[str, str]] = None,
+        fallback_feature_names: Optional[List[str]] = None
+    ) -> "AccidentSeverityPredictor":
+        """
+        Build predictor from a model stored in the MLflow Model Registry.
+
+        Args:
+            model_uri: MLflow model URI (e.g., models:/name@alias)
+            model_version: Optional resolved version string for naming
+            class_labels: Optional mapping of class IDs to labels
+            fallback_feature_names: Fallback list of feature names when the
+                loaded model does not expose feature_names_in_
+        """
+        loaded_model = mlflow.sklearn.load_model(model_uri)
+
+        instance = cls.__new__(cls)
+        model_name = Path(model_uri).name
+        instance.model_dir = Path(f"{model_name}_v{model_version}") if model_version else Path(model_name)
+        instance.model = loaded_model
+
+        feature_names = list(getattr(loaded_model, "feature_names_in_", []))
+        if not feature_names:
+            feature_names = list(fallback_feature_names or [])
+            logging.warning("Loaded model missing feature_names_in_; using fallback feature list.")
+        instance.feature_names = feature_names
+
+        instance.config = {
+            "model_uri": model_uri,
+            "model_version": model_version,
+        }
+
+        if class_labels:
+            instance.class_labels = {str(k): v for k, v in class_labels.items()}
+        else:
+            instance.class_labels = {}
+
+        logging.info(f"Loaded model from MLflow URI {model_uri} (version: {model_version})")
+        logging.info(f"Expected features: {len(instance.feature_names)}")
+        logging.info(f"Model classes: {getattr(instance.model, 'n_classes_', 'unknown')}")
+        return instance
     
     def __init__(self, model_dir: Union[str, Path]):
         """

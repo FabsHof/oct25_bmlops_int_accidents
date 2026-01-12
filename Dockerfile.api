@@ -12,9 +12,12 @@ COPY requirements-api.txt /requirements-api.txt
 # Install Python dependencies
 RUN uv pip install --system --no-cache-dir -r /requirements-api.txt
 
-# Copy only necessary application code
+# Copy necessary application code
 COPY src/api /app/src/api
 COPY src/auth /app/src/auth
+COPY src/models /app/src/models
+COPY src/utils /app/src/utils
+COPY src/__init__.py /app/src/__init__.py
 
 # Set environment variables
 ENV PYTHONPATH=/app

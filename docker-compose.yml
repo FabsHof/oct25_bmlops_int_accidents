@@ -376,11 +376,31 @@ services:
       context: .
       dockerfile: Dockerfile.api
     container_name: api_container
+    depends_on:
+      mlflow:
+        condition: service_healthy
+      accidents_db:
+        condition: service_healthy
     environment:
       # Security configuration
       SECRET_KEY: ${SECRET_KEY}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
       ALGORITHM: ${ALGORITHM}
+      # Database configuration
+      ACCIDENTS_POSTGRES_HOST: accidents_db
+      ACCIDENTS_POSTGRES_USER: ${ACCIDENTS_POSTGRES_USER}
+      ACCIDENTS_POSTGRES_PASSWORD: ${ACCIDENTS_POSTGRES_PASSWORD}
+      ACCIDENTS_POSTGRES_DB: ${ACCIDENTS_POSTGRES_DB}
+      # MLflow configuration
+      MLFLOW_HOST: mlflow
+      MLFLOW_PORT: ${MLFLOW_PORT}
+      MINIO_HOST: mlflow-minio
+      MINIO_PORT: 9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
     ports:
       - "${API_PORT}:8000"
     healthcheck:
@@ -388,6 +408,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - mlflow_network
+      - data_network
     restart: always
 
   # ===========================================
