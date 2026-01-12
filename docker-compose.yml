@@ -493,20 +493,28 @@ services:
       - monitoring_network
     restart: unless-stopped
 
+  # ==============================
+  # Streamlit Frontend
+  # ==============================
   streamlit:
     build:
       context: .
       dockerfile: Dockerfile.streamlit
     container_name: streamlit_container
     environment:
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      api:
-        condition: service_healthy
+      API_HOST: api
+      API_PORT: "8000"
     ports:
       - "${STREAMLIT_PORT}:8501"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
     networks:
       - mlflow_network
+      - data_network
     restart: always
 
 volumes:
