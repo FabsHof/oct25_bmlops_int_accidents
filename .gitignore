@@ -226,3 +226,4 @@ data/raw/*
 data/clean/*
 !data/clean/.gitkeep
 models/*
+requirements.txt

@@ -50,26 +50,40 @@ def setup_logging(
     
     formatter = logging.Formatter(log_format)
     
-    # Console handler
-    console_handler = logging.StreamHandler()
+    # Console handler - explicitly use sys.stdout to avoid stderr marking as ERROR
+    import sys
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(log_level)
     console_handler.setFormatter(formatter)
     _logger.addHandler(console_handler)
     
     # File handler
-    if log_file is None:
-        # Default to logs/app.log in project root
-        project_root = Path(__file__).parent.parent.parent
-        log_file = project_root / 'logs' / 'app.log'
-    
-    # Create logs directory if it doesn't exist
-    log_path = Path(log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(log_level)
-    file_handler.setFormatter(formatter)
-    _logger.addHandler(file_handler)
+    try:
+        if log_file is None:
+            # Try to get log file path from environment variable
+            log_file = os.getenv('APP_LOG_FILE')
+            if log_file is None:
+                # Check if we're in Airflow environment
+                airflow_home = os.getenv('AIRFLOW_HOME', '/opt/airflow')
+                if os.path.exists(airflow_home):
+                    log_file = os.path.join(airflow_home, 'logs', 'app.log')
+                else:
+                    # Default to logs/app.log in project root
+                    project_root = Path(__file__).parent.parent.parent
+                    log_file = os.path.join(project_root, 'logs', 'app.log')
+        
+        # Create logs directory if it doesn't exist
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(formatter)
+        _logger.addHandler(file_handler)
+    except (PermissionError, OSError) as e:
+        # If we can't create the log file (e.g., in Docker without permissions),
+        # just log to console
+        _logger.warning(f"Could not create log file: {e}. Logging to console only.")
     
     return _logger
 

@@ -11,14 +11,6 @@ from src.auth.schemas import Token
 # Load environment variables
 load_dotenv()
 
-from src.data.ingest_data import (
-    load_next_chunk,
-    reset_progress
-)
-from src.utils.database import (
-    get_db_connection,
-    get_progress_status
-)
 from src.models.predict_model import (
     AccidentSeverityPredictor,
     get_best_model_dir

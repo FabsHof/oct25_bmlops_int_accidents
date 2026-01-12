@@ -1,0 +1,17 @@
+# ==============================================================================
+# Docker Requirements - Minimal dependencies for Airflow
+# Includes only packages needed to run the dags within Airflow
+# ==============================================================================
+
+evidently>=0.7.0
+httpx>=0.28.1
+joblib>=1.5.2
+kagglehub>=0.3.13
+matplotlib>=3.8.0
+mlflow>=3.7.0
+pandas>=2.3.3
+prometheus-client>=0.21.0
+psycopg2-binary>=2.9.10
+python-dotenv>=1.0.0
+scikit-learn>=1.7.2
+shap>=0.46.0
