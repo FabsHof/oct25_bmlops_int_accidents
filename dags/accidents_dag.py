@@ -15,7 +15,7 @@ from typing import Dict, Any
 
 from airflow.sdk import dag, task, setup, teardown, Variable
 from airflow.sdk.bases.operator import chain
-from airflow.utils.task_group import TaskGroup
+from airflow.sdk import TaskGroup
 from src.data.ingest_data import reset_progress
 
 TRAIN_RATIO = 0.6
@@ -563,17 +563,25 @@ def accidents_pipeline():
                     test_data, name=f"test_data-v{data_version}", targets=TARGET_COLUMN
                 )
 
+                # Evaluation config that disables all explainability features for performance
+                # SHAP and other explanations are computed separately in generate_shap_explanations task
+                fast_eval_config = {
+                    'log_explainer': False,
+                    'log_model_explainability': False,
+                    'explainability_algorithm': None,
+                }
+
                 logging.info('Evaluating on validation set...')
                 val_result = mlflow.models.evaluate(
                     model_uri, val_dataset, model_type="classifier",
-                    evaluator_config={'log_explainer': False},
+                    evaluator_config=fast_eval_config,
                     extra_metrics=extra_metrics
                 )
 
                 logging.info('Evaluating on test set...')
                 test_result = mlflow.models.evaluate(
                     model_uri, test_dataset, model_type="classifier",
-                    evaluator_config={'log_explainer': False},
+                    evaluator_config=fast_eval_config,
                     extra_metrics=extra_metrics
                 )
 
