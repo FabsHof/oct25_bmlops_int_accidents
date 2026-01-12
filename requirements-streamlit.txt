@@ -1,0 +1,12 @@
+# ==============================================================================
+# Streamlit Docker Requirements
+# User frontend for Accident Severity Prediction
+# ==============================================================================
+
+streamlit>=1.40.0
+requests>=2.31.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+pillow>=10.0.0
+mlflow>=3.7.0
+psycopg2-binary>=2.9.10

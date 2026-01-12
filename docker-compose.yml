@@ -19,6 +19,9 @@ x-airflow-common:
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    # Adding some longer timouts to load DAGs on old computers
+    AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT: 60       # Default is 30.0
+    AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT: 90  # Default is 50.0
     # Task execution settings for Airflow 3.x
     AIRFLOW__CORE__LAZY_LOAD_PLUGINS: 'false'
     AIRFLOW__CORE__LAZY_DISCOVER_PROVIDERS: 'false'
@@ -329,11 +332,11 @@ services:
       context: .
       dockerfile: Dockerfile.mlflow
     container_name: mlflow_container
-    depends_on:
-      mlflow_db:
-        condition: service_healthy
-      mlflow_minio:
-        condition: service_healthy
+    # depends_on:
+    #   mlflow_db:
+    #     condition: service_healthy
+    #   mlflow_minio:
+    #     condition: service_healthy
     environment:
       # Backend store configuration
       MLFLOW_BACKEND_STORE_URI: ${MLFLOW_BACKEND_STORE_URI}
@@ -489,6 +492,30 @@ services:
     networks:
       - monitoring_network
     restart: unless-stopped
+
+  # ==============================
+  # Streamlit Frontend
+  # ==============================
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: streamlit_container
+    environment:
+      API_HOST: api
+      API_PORT: "8000"
+    ports:
+      - "${STREAMLIT_PORT}:8501"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - mlflow_network
+      - data_network
+    restart: always
 
 volumes:
   airflow_db_data:

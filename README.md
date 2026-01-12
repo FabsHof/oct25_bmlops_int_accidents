@@ -2,6 +2,124 @@
 
 The objective of this MLOps project is to build a MLOps pipeline with the aim of predicting the severity of road accidents in France. Predictions will be based on historical data.
 
+## ↪️ Architecture Overview
+
+<!-- Mermaid.js script copied from the most up to date version in src/utils/schemas.py -->
+```mermaid
+
+%% %%{init: {"flowchart": {"curve": "curve"}}}%%
+%% Choose between curve, linear, step, cardinal
+%% default: curve
+
+flowchart LR
+
+    classDef transp fill:transparent,stroke:transparent;
+    classDef user fill:#ff6f00,stroke:#b34700,stroke-width:3px,color:#ffffff;
+    classDef airflow fill:#ffd54f,stroke:#b28704,stroke-width:3px,color:#000000;
+    classDef api fill:#00c853,stroke:#007e33,stroke-width:3px,color:#ffffff;
+    classDef db fill:#2962ff,stroke:#0039cb,stroke-width:3px,color:#ffffff;
+    classDef mlflow fill:#00b0ff,stroke:#007bb2,stroke-width:3px,color:#ffffff;
+
+    linkStyle default stroke:#000999,stroke-width:2px
+
+    subgraph UA[USER APP]
+        IFS[INTERACTIVE FEATURE INPUT]:::user
+    end
+
+    IFS --> |Features Input|EP
+
+
+
+    subgraph MLF[MLFLOW]
+        SR[STORE RUN]:::mlflow
+        PLMS[PROD & LAST MODEL SCORE]:::mlflow
+        UT[UPDATE TAGS]:::mlflow
+        IPM[IDENTIFY PROD. MODEL]:::mlflow
+    end
+
+
+
+    IPM --> |Prod. Model|EP
+    PLMS --> |Metrics|DPM
+
+
+
+
+
+    subgraph API[MODEL API]
+        ET[ENDPOINT /train]:::api
+        EP[ENDPOINT /predict]:::api
+    end
+
+
+    EP --> |Query Prod. Model|IPM
+    EP --> |Prediction|IFS
+    ET -->|Data Query|FPD
+    ET -->|Last Model & Metrics|SR
+
+
+
+    subgraph DB[DATABASE]
+        SRD[STORE RAW DATA]:::db
+        SPD[STORE PREPROCESSED DATA]:::db
+        FPD[FETCH PREPROCESSED DATA]:::db
+    end
+
+    FPD -->|Preprocessed Data|ET
+
+
+
+    subgraph CAF[CRON / AIRFLOW]
+        START[PROCESS START]:::airflow
+        ETL[ETL]:::airflow
+        TE[TRAIN & EVALUATE]:::airflow
+        DPM[IDENTIFY PROD. MODEL]:::airflow
+        END[PROCESS END<br>/ LOOP TO ETL]:::airflow
+    end
+
+    START --> ETL --> TE --> DPM --> END
+    DPM -->|IF last model is better: Update Query|UT
+    DPM --> |Last & Prod. Model Score Query|PLMS
+    ETL --> |csv Files Query|DD
+    ETL --> |Raw Data|SRD
+    ETL --> |Preprocessed Data|SPD
+    TE --> |Train New Model Query|ET
+    linkStyle 8 stroke:#BA8E23,stroke-width:6px,stroke-dasharray:5 5
+    linkStyle 9 stroke:#BA8E23,stroke-width:6px,stroke-dasharray:5 5
+    linkStyle 10 stroke:#BA8E23,stroke-width:6px,stroke-dasharray:5 5
+    linkStyle 11 stroke:#BA8E23,stroke-width:6px,stroke-dasharray:5 5
+
+    
+
+    subgraph KG[KAGGLE]
+        DD[DATASET DOWNLOAD]:::db
+    end
+
+    DD --> |Raw csv Files|ETL
+
+
+
+    subgraph LG[LEGEND]
+        direction LR
+        PROCESS
+        D1[ ]:::transp
+        D2[ ]:::transp
+        D3[ ]:::transp
+        D4[ ]:::transp
+        D1 --> |DATA| D2
+        D3 --> |PROCESS STEPS| D4
+        linkStyle 20 stroke:#BA8E23,stroke-width:6px,stroke-dasharray:5 5
+    end
+
+%% =======================
+%% CLICKABLE LINKS EXAMPLE
+%% =======================
+
+    %click DD "?page=training" "Test page"
+
+```
+
+
 ## 🗂️ Project Organization
 
 The project is structured as follows:
@@ -38,10 +156,13 @@ The project is structured as follows:
 
 > everything that has to be done once before starting development.
 
-0. install Python 3.11 or higher.
-1. install [UV](https://docs.astral.sh/uv/getting-started/installation/).
+0. install [UV](https://docs.astral.sh/uv/getting-started/installation/)
+1. install python and its dependencies:
+   ```bash
+   uv sync
+   ```
 2. install [Docker](https://docs.docker.com/get-docker/).
-3. create `.env.example` from `.env`-file and adapt values if needed
+3. create `.env` from the `.env.example` file and adapt values if needed
 
 ## ⌨️ Development Setup
 
@@ -87,3 +208,17 @@ The project includes the following Airflow DAGs for orchestrating workflows:
 - **Model**: Random Forest Classifier with 100 trees
 - **Metrics**: Accuracy, Precision, Recall, F1-score (weighted), ROC-AUC
 - **Artifacts**: Model, metrics, feature importance, confusion matrix, config
+
+## Streamlit Presentation
+
+1. **Start the API locally with:**
+   ```bash
+   uvicorn src.api.main:app --reload
+   ```
+
+2. **Start the Streamlit App locally with:**
+   ```bash
+   PYTHONPATH=. streamlit run src/streamlit/streamlit_app.py
+   ```
+3. **The Streamlit App can be accessed at:\n**
+   http://localhost:8501/

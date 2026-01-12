@@ -1,0 +1,28 @@
+# ==============================================================================
+# Streamlit Docker Container
+# User frontend for Accident Severity Prediction
+# ==============================================================================
+
+FROM python:3.11-slim
+
+# Install uv for faster Python package installation
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+ENV PYTHONPATH=/app
+
+# Install dependencies
+COPY requirements-streamlit.txt ./
+RUN uv pip install --system --no-cache-dir -r requirements-streamlit.txt
+
+# Copy application files
+COPY src/streamlit/ /app/src/streamlit/
+COPY src/utils/ /app/src/utils/
+COPY src/__init__.py /app/src/__init__.py
+
+# Run Streamlit
+CMD ["streamlit", "run", "src/streamlit/Home.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true"]
