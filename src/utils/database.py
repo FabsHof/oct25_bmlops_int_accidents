@@ -52,6 +52,7 @@ def get_db_connection() -> connection:
 def initialize_progress_tracking(conn: connection, csv_dir: Path, chunk_size: int = 1000) -> None:
     """
     Initialize the data_ingestion_progress table with metadata for all tables.
+    Creates a new version for this ingestion cycle.
     
     Args:
         conn: Database connection
@@ -71,6 +72,14 @@ def initialize_progress_tracking(conn: connection, csv_dir: Path, chunk_size: in
     cursor = conn.cursor()
     
     try:
+        # Get the next version number
+        cursor.execute("""
+            SELECT COALESCE(MAX(version), 0) + 1 as next_version
+            FROM data_ingestion_progress
+        """)
+        next_version = cursor.fetchone()[0]
+        logging.info(f"Starting new ingestion cycle with version: {next_version}")
+        
         for table_name, csv_path in csv_files.items():
             if csv_path.exists():
                 # Get total row count (excluding header) with encoding fallback
@@ -82,22 +91,17 @@ def initialize_progress_tracking(conn: connection, csv_dir: Path, chunk_size: in
                     with open(csv_path, encoding='latin-1') as f:
                         total_rows = sum(1 for _ in f) - 1
                 
+                # Always insert a new row for each new ingestion cycle
                 cursor.execute("""
                     INSERT INTO data_ingestion_progress 
-                    (table_name, rows_loaded, total_rows, chunk_size, csv_directory, is_complete)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (table_name) 
-                    DO UPDATE SET 
-                        total_rows = EXCLUDED.total_rows,
-                        chunk_size = EXCLUDED.chunk_size,
-                        csv_directory = EXCLUDED.csv_directory,
-                        last_updated = CURRENT_TIMESTAMP
-                """, (table_name, 0, total_rows, chunk_size, str(csv_dir), False))
+                    (table_name, rows_loaded, total_rows, chunk_size, csv_directory, is_complete, version)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (table_name, 0, total_rows, chunk_size, str(csv_dir), False, next_version))
                 
-                logging.info(f"Initialized tracking for {table_name}: {total_rows} total rows")
+                logging.info(f"Initialized tracking for {table_name}: {total_rows} total rows (version {next_version})")
         
         conn.commit()
-        logging.info("Progress tracking initialized successfully")
+        logging.info(f"Progress tracking initialized successfully for version {next_version}")
         
     except Exception as e:
         conn.rollback()
@@ -109,7 +113,7 @@ def initialize_progress_tracking(conn: connection, csv_dir: Path, chunk_size: in
 
 def get_progress_status(conn: connection) -> Dict[str, Any]:
     """
-    Get the current progress status for all tables.
+    Get the current progress status for all tables in the most recent ingestion cycle.
     
     Args:
         conn: Database connection
@@ -120,10 +124,18 @@ def get_progress_status(conn: connection) -> Dict[str, Any]:
     cursor = conn.cursor()
     
     try:
+        # Get only the most recent version entries for each table
         cursor.execute("""
+            WITH latest_entries AS (
+                SELECT DISTINCT ON (table_name)
+                    table_name, rows_loaded, total_rows, chunk_size, 
+                    last_updated, csv_directory, is_complete, version
+                FROM data_ingestion_progress
+                ORDER BY table_name, version DESC, id DESC
+            )
             SELECT table_name, rows_loaded, total_rows, chunk_size, 
-                   last_updated, csv_directory, is_complete
-            FROM data_ingestion_progress
+                   last_updated, csv_directory, is_complete, version
+            FROM latest_entries
             ORDER BY table_name
         """)
         
@@ -131,7 +143,7 @@ def get_progress_status(conn: connection) -> Dict[str, Any]:
         
         progress = {}
         for row in results:
-            table_name, rows_loaded, total_rows, chunk_size, last_updated, csv_directory, is_complete = row
+            table_name, rows_loaded, total_rows, chunk_size, last_updated, csv_directory, is_complete, version = row
             progress[table_name] = {
                 'rows_loaded': rows_loaded,
                 'total_rows': total_rows,
@@ -139,6 +151,7 @@ def get_progress_status(conn: connection) -> Dict[str, Any]:
                 'last_updated': last_updated.isoformat() if last_updated else None,
                 'csv_directory': csv_directory,
                 'is_complete': is_complete,
+                'version': version,
                 'progress_percentage': (rows_loaded / total_rows * 100) if total_rows > 0 else 0
             }
         
@@ -150,7 +163,8 @@ def get_progress_status(conn: connection) -> Dict[str, Any]:
 
 def update_progress(conn: connection, table_name: str, rows_loaded: int) -> None:
     """
-    Update the progress for a specific table.
+    Update the progress for a specific table in the current ingestion cycle.
+    Updates the most recent entry for this table.
     
     Args:
         conn: Database connection
@@ -160,12 +174,18 @@ def update_progress(conn: connection, table_name: str, rows_loaded: int) -> None
     cursor = conn.cursor()
     
     try:
+        # Update only the most recent entry for this table
         cursor.execute("""
             UPDATE data_ingestion_progress
             SET rows_loaded = rows_loaded + %s,
                 last_updated = CURRENT_TIMESTAMP,
                 is_complete = (rows_loaded + %s >= total_rows)
-            WHERE table_name = %s
+            WHERE id = (
+                SELECT id FROM data_ingestion_progress
+                WHERE table_name = %s
+                ORDER BY version DESC, id DESC
+                LIMIT 1
+            )
         """, (rows_loaded, rows_loaded, table_name))
         
         conn.commit()

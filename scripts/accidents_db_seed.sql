@@ -78,13 +78,14 @@ CREATE TABLE IF NOT EXISTS raw_vehicles (
 );
 CREATE TABLE IF NOT EXISTS data_ingestion_progress (
     id SERIAL PRIMARY KEY,
-    table_name VARCHAR(50) UNIQUE NOT NULL,
+    table_name VARCHAR(50) NOT NULL,
     rows_loaded INTEGER DEFAULT 0,
     total_rows INTEGER DEFAULT 0,
     chunk_size INTEGER DEFAULT 1000,
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     csv_directory VARCHAR(255),
-    is_complete BOOLEAN DEFAULT FALSE
+    is_complete BOOLEAN DEFAULT FALSE,
+    version INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS clean_data (
     record_id SERIAL PRIMARY KEY,

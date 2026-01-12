@@ -167,16 +167,27 @@ def get_data_version() -> int:
     """
     Get the current data version from the database.
     
+    Returns the latest version number from completed data ingestion entries.
+    
     Returns:
-        The latest data ingestion progress ID as the version
+        Latest version number from data_ingestion_progress table
     """
     with get_db_connection() as conn:
         meta_query = """
-            SELECT id FROM data_ingestion_progress
-            ORDER BY id DESC LIMIT 1
+            SELECT version
+            FROM data_ingestion_progress
+            WHERE is_complete = TRUE
+            ORDER BY last_updated DESC, id DESC
+            LIMIT 1
         """
         meta_df = pd.read_sql_query(meta_query, conn)
-        version = int(meta_df['id'].iloc[0]) if len(meta_df) > 0 else 1
+        
+        if len(meta_df) > 0 and meta_df['version'].iloc[0] is not None:
+            version = int(meta_df['version'].iloc[0])
+        else:
+            # Fallback if no completed ingestions exist
+            version = 1
+        
         logging.info(f"Current data version: {version}")
         return version
 
