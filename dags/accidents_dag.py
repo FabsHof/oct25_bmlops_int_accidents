@@ -661,6 +661,7 @@ def accidents_pipeline():
             prepare_features_and_target
         )
         from src.monitoring.drift import DriftDetector
+        from src.monitoring.drift_reporter import compute_and_submit_drift
 
         logging.info('Generating drift report using DriftDetector...')
 
@@ -678,10 +679,17 @@ def accidents_pipeline():
             reports_dir=reports_dir
         )
 
-        report_path = drift_detector.generate_full_report(
+        # Generate report and extract drift metrics in one call
+        drift_report = drift_detector.generate_full_report(
             current_data=X_test,
             include_target_drift=False
         )
+
+        # Submit drift metrics to API/Prometheus using results from DriftDetector
+        drift_result = compute_and_submit_drift(drift_results=drift_report, logger=logging)
+        
+        # Extract report path for artifact logging
+        report_path = drift_report.get('report_path')
 
         setup_mlflow_tracking()
 
@@ -693,6 +701,9 @@ def accidents_pipeline():
                 with mlflow.start_run(run_name='drift_detection', nested=True):
                     mlflow.log_metric('reference_samples', len(X_train))
                     mlflow.log_metric('current_samples', len(X_test))
+                    mlflow.log_metric('overall_drift_score', drift_result['overall_drift_score'])
+                    for feature, score in list(drift_result['feature_drift_scores'].items())[:10]:
+                        mlflow.log_metric(f'feature_drift_{feature}', score)
                     mlflow.log_artifact(report_path, 'drift')
                     logging.info(f'Drift report logged to MLflow: {report_path}')
         else:
@@ -703,10 +714,14 @@ def accidents_pipeline():
             'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S'),
             'reference_samples': len(X_train),
             'current_samples': len(X_test),
+            'overall_drift_score': drift_result['overall_drift_score'],
+            'feature_drift_scores': drift_result['feature_drift_scores'],
+            'metrics_submitted': drift_result['submitted'],
             'registration_status': registration_result.get('status', 'unknown')
         }
 
         logging.info(f'Drift report saved: {report_path}')
+        logging.info(f'Overall drift score: {drift_result["overall_drift_score"]:.4f}')
 
         return drift_info
 

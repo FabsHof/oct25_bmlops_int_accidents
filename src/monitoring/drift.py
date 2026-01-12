@@ -243,9 +243,9 @@ class DriftDetector:
         current_data: pd.DataFrame,
         include_target_drift: bool = False,
         target_column: Optional[str] = None
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
-        Generate a comprehensive drift report.
+        Generate a comprehensive drift report and extract drift metrics.
         
         Args:
             current_data: Current production data
@@ -253,7 +253,11 @@ class DriftDetector:
             target_column: Name of the target column if analyzing target drift
             
         Returns:
-            Path to the saved HTML report
+            Dict containing:
+            - 'report_path': Path to saved HTML report
+            - 'overall_drift_score': Share of drifted columns (0-1)
+            - 'feature_drift_scores': Dict of per-feature drift scores
+            - 'is_drift_detected': Boolean indicating if drift detected
         """
         if self.reference_data is None:
             raise ValueError("Reference data must be set before generating report")
@@ -277,9 +281,32 @@ class DriftDetector:
         report_path = self.reports_dir / f"full_drift_report_{timestamp}.html"
         snapshot.save_html(str(report_path))
         
+        # Extract drift metrics from snapshot
+        result = snapshot.dict()
+        overall_drift_score = 0.0
+        is_drift_detected = False
+        feature_drift_scores = {}
+        
+        # Parse drift metrics from Evidently result structure
+        metrics = result.get("metrics", [])
+        for metric in metrics:
+            metric_result = metric.get("result", {})
+            if "share_of_drifted_columns" in metric_result:
+                overall_drift_score = metric_result.get("share_of_drifted_columns", 0.0)
+                is_drift_detected = metric_result.get("dataset_drift", False)
+            if "drift_by_columns" in metric_result:
+                for feature, info in metric_result.get("drift_by_columns", {}).items():
+                    if isinstance(info, dict):
+                        feature_drift_scores[feature] = info.get("drift_score", 0.0)
+        
         logger.info(f"Full drift report saved to {report_path}")
         
-        return str(report_path)
+        return {
+            "report_path": str(report_path),
+            "overall_drift_score": overall_drift_score,
+            "feature_drift_scores": feature_drift_scores,
+            "is_drift_detected": is_drift_detected
+        }
     
     def get_buffer_status(self) -> Dict[str, Any]:
         """

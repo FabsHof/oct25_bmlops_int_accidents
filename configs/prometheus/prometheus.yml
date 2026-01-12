@@ -11,13 +11,13 @@ scrape_configs:
   # FastAPI application metrics
   - job_name: 'fastapi'
     static_configs:
-      - targets: ['host.docker.internal:8000']
+      - targets: ['api:8000']
     metrics_path: /metrics
 
   # MLflow server (if metrics endpoint available)
   - job_name: 'mlflow'
     static_configs:
-      - targets: ['mlflow:5000']
+      - targets: ['mlflow:5001']
     metrics_path: /metrics
 
   # Node Exporter for system metrics

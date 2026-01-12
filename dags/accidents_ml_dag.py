@@ -370,6 +370,7 @@ def accidents_model_training():
             prepare_features_and_target
         )
         from src.monitoring.drift import DriftDetector
+        from src.monitoring.drift_reporter import compute_and_submit_drift
         
         logging.info('Generating drift report using DriftDetector...')
         
@@ -395,15 +396,22 @@ def accidents_model_training():
             include_target_drift=False
         )
         
+        # Compute and submit drift metrics to API/Prometheus
+        drift_result = compute_and_submit_drift(drift_results=drift_detector_result, logger=logging)
+        
         drift_info = {
             'report_path': report_path,
             'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S'),
             'reference_samples': len(X_train),
             'current_samples': len(X_test),
+            'overall_drift_score': drift_result['overall_drift_score'],
+            'feature_drift_scores': drift_result['feature_drift_scores'],
+            'metrics_submitted': drift_result['submitted'],
             'registration_status': registration_result.get('status', 'unknown')
         }
         
         logging.info(f'Drift report saved: {report_path}')
+        logging.info(f'Overall drift score: {drift_result["overall_drift_score"]:.4f}')
         
         return drift_info
 

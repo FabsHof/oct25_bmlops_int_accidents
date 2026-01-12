@@ -16,3 +16,4 @@ psycopg2-binary>=2.9.10
 joblib>=1.5.2
 scikit-learn>=1.7.2
 numpy>=1.26.0
+prometheus-client>=0.20.0
