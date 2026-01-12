@@ -1,0 +1,7 @@
+# ==============================================================================
+# MLflow Docker Requirements
+# PostgreSQL client libraries and boto3 for S3/MinIO artifact storage
+# ==============================================================================
+
+psycopg2-binary>=2.9.10
+boto3>=1.35.0

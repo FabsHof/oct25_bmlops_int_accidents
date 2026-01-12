@@ -1,0 +1,18 @@
+# ==============================================================================
+# API Docker Requirements
+# FastAPI application with JWT authentication and data processing
+# ==============================================================================
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt<4
+python-dotenv>=1.0.0
+python-multipart>=0.0.9
+pandas>=2.2.0
+mlflow>=3.7.0
+psycopg2-binary>=2.9.10
+joblib>=1.5.2
+scikit-learn>=1.7.2
+numpy>=1.26.0

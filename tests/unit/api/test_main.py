@@ -111,40 +111,41 @@ class TestAuthentication:
 class TestPredictionEndpoint:
     """Test prediction endpoint functionality."""
     
-    @patch('src.api.main.get_best_model_dir')
-    @patch('src.api.main.AccidentSeverityPredictor')
-    def test_predict_with_valid_request(self, mock_predictor_class, mock_get_model):
+    @patch('src.api.main.setup_mlflow_tracking')
+    @patch('src.api.main.mlflow.models.get_model_info')
+    @patch('src.api.main.AccidentSeverityPredictor.from_mlflow_model')
+    def test_predict_with_valid_request(self, mock_from_mlflow, mock_get_model_info, mock_setup_tracking):
         """Test successful prediction with valid request."""
-        # Mock model directory
+        mock_setup_tracking.return_value = None
+        mock_get_model_info.return_value = Mock(version=5)
+
         mock_model_dir = Mock()
-        mock_model_dir.name = "accident_severity_rf_20251210_162637"
-        mock_get_model.return_value = mock_model_dir
-        
-        # Mock predictor
+        mock_model_dir.name = "random_forest_model_v5"
+
         mock_predictor = Mock()
         mock_predictor.model_dir = mock_model_dir
         mock_predictor.predict.return_value = SAMPLE_PREDICTION_RESPONSE
-        mock_predictor_class.return_value = mock_predictor
+        mock_from_mlflow.return_value = mock_predictor
         
-        # Make request
         response = client.post(
             f"/predict?api_key={VALID_API_KEY}",
             json=SAMPLE_PREDICTION_REQUEST
         )
         
-        # Assertions
         assert response.status_code == 200
         data = response.json()
         assert data["prediction"] == 3
         assert data["prediction_label"] == "Hospitalized wounded"
         assert data["confidence"] == 0.65
         assert "probabilities" in data
-        assert data["model_version"] == "accident_severity_rf_20251210_162637"
+        assert data["model_version"] == "random_forest_model_v5"
     
-    @patch('src.api.main.get_best_model_dir')
-    def test_predict_when_no_model_available(self, mock_get_model):
+    @patch('src.api.main.setup_mlflow_tracking')
+    @patch('src.api.main.mlflow.models.get_model_info')
+    def test_predict_when_no_model_available(self, mock_get_model_info, mock_setup_tracking):
         """Test prediction when no model is available."""
-        mock_get_model.return_value = None
+        mock_setup_tracking.return_value = None
+        mock_get_model_info.side_effect = Exception("no model")
         
         response = client.post(
             f"/predict?api_key={VALID_API_KEY}",
@@ -182,20 +183,21 @@ class TestPredictionEndpoint:
         
         assert response.status_code == 422  # Validation error
     
-    @patch('src.api.main.get_best_model_dir')
-    @patch('src.api.main.AccidentSeverityPredictor')
-    def test_predict_with_prediction_error(self, mock_predictor_class, mock_get_model):
+    @patch('src.api.main.setup_mlflow_tracking')
+    @patch('src.api.main.mlflow.models.get_model_info')
+    @patch('src.api.main.AccidentSeverityPredictor.from_mlflow_model')
+    def test_predict_with_prediction_error(self, mock_from_mlflow, mock_get_model_info, mock_setup_tracking):
         """Test prediction when model raises an error."""
-        # Mock model directory
-        mock_model_dir = Mock()
-        mock_model_dir.name = "accident_severity_rf_20251210_162637"
-        mock_get_model.return_value = mock_model_dir
+        mock_setup_tracking.return_value = None
+        mock_get_model_info.return_value = Mock(version=5)
         
-        # Mock predictor that raises error
+        mock_model_dir = Mock()
+        mock_model_dir.name = "random_forest_model_v5"
+        
         mock_predictor = Mock()
         mock_predictor.model_dir = mock_model_dir
         mock_predictor.predict.side_effect = ValueError("Invalid input data")
-        mock_predictor_class.return_value = mock_predictor
+        mock_from_mlflow.return_value = mock_predictor
         
         response = client.post(
             f"/predict?api_key={VALID_API_KEY}",
@@ -209,38 +211,41 @@ class TestPredictionEndpoint:
 class TestModelInfoEndpoint:
     """Test model info endpoint."""
     
-    @patch('src.api.main.get_best_model_dir')
-    @patch('src.api.main.AccidentSeverityPredictor')
-    def test_get_model_info(self, mock_predictor_class, mock_get_model):
+    @patch('src.api.main.setup_mlflow_tracking')
+    @patch('src.api.main.mlflow.models.get_model_info')
+    @patch('src.api.main.AccidentSeverityPredictor.from_mlflow_model')
+    def test_get_model_info(self, mock_from_mlflow, mock_get_model_info, mock_setup_tracking):
         """Test getting model information."""
-        # Mock model directory
-        mock_model_dir = Mock()
-        mock_model_dir.name = "accident_severity_rf_20251210_162637"
-        mock_model_dir.__str__ = Mock(return_value="/path/to/model")
-        mock_get_model.return_value = mock_model_dir
+        mock_setup_tracking.return_value = None
+        mock_get_model_info.return_value = Mock(version=5)
         
-        # Mock predictor
+        mock_model_dir = Mock()
+        mock_model_dir.name = "random_forest_model_v5"
+        mock_model_dir.__str__ = Mock(return_value="/path/to/model")
+
         mock_predictor = Mock()
         mock_predictor.model_dir = mock_model_dir
         mock_predictor.feature_names = ["year", "month", "hour"]
         mock_predictor.class_labels = {"1": "Unscathed", "2": "Light injury"}
         mock_predictor.config = {"some": "config"}
-        mock_predictor_class.return_value = mock_predictor
+        mock_from_mlflow.return_value = mock_predictor
         
         response = client.get(f"/model/info?api_key={VALID_API_KEY}")
         
         assert response.status_code == 200
         data = response.json()
-        assert data["model_version"] == "accident_severity_rf_20251210_162637"
+        assert data["model_version"] == "random_forest_model_v5"
         assert data["num_features"] == 3
         assert "feature_names" in data
         assert "class_labels" in data
         assert "config" in data
     
-    @patch('src.api.main.get_best_model_dir')
-    def test_get_model_info_no_model(self, mock_get_model):
+    @patch('src.api.main.setup_mlflow_tracking')
+    @patch('src.api.main.mlflow.models.get_model_info')
+    def test_get_model_info_no_model(self, mock_get_model_info, mock_setup_tracking):
         """Test getting model info when no model is available."""
-        mock_get_model.return_value = None
+        mock_setup_tracking.return_value = None
+        mock_get_model_info.side_effect = Exception("no model")
         
         response = client.get(f"/model/info?api_key={VALID_API_KEY}")
         

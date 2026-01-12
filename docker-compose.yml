@@ -1,4 +1,268 @@
+# ==============================
+# Airflow common configuration
+# ==============================
+x-airflow-common:
+  &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@airflow_db:5432/${AIRFLOW_POSTGRES_DB}
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@airflow_db:5432/${AIRFLOW_POSTGRES_DB}
+    AIRFLOW__CELERY__BROKER_URL: redis://:@airflow_redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    # Adding some longer timouts to load DAGs on old computers
+    AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT: 60       # Default is 30.0
+    AIRFLOW__CORE__DAG_FILE_PROCESSOR_TIMEOUT: 90  # Default is 50.0
+    # Task execution settings for Airflow 3.x
+    AIRFLOW__CORE__LAZY_LOAD_PLUGINS: 'false'
+    AIRFLOW__CORE__LAZY_DISCOVER_PROVIDERS: 'false'
+    # Add /app to Python path so DAGs can import from src
+    PYTHONPATH: '/app:/opt/airflow'
+    # Project-specific environment variables for DAGs
+    ACCIDENTS_POSTGRES_HOST: accidents_db
+    ACCIDENTS_POSTGRES_USER: ${ACCIDENTS_POSTGRES_USER}
+    ACCIDENTS_POSTGRES_PASSWORD: ${ACCIDENTS_POSTGRES_PASSWORD}
+    ACCIDENTS_POSTGRES_DB: ${ACCIDENTS_POSTGRES_DB}
+    MLFLOW_TRACKING_URI: http://mlflow:${MLFLOW_PORT}
+    MLFLOW_HOST: mlflow
+    MLFLOW_PORT: ${MLFLOW_PORT}
+    MINIO_HOST: mlflow-minio
+    MINIO_PORT: 9000
+    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
+    DATASET_NAME: ${DATASET_NAME}
+    RAW_DATA_PATH: ${RAW_DATA_PATH}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/config:/opt/airflow/config
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./data:/app/data
+    - ./src:/app/src
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    &airflow-common-depends-on
+    airflow_redis:
+      condition: service_healthy
+    airflow_db:
+      condition: service_healthy
+  networks:
+    - airflow_network
+    - data_network
+    - mlflow_network
+
 services:
+  # ==============================
+  # Airflow Services
+  # ==============================
+  airflow_db:
+    image: postgres:16
+    container_name: airflow_db_container
+    environment:
+      POSTGRES_USER: ${AIRFLOW_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_POSTGRES_DB}
+    ports:
+      - "${AIRFLOW_POSTGRES_PORT}:5432"
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${AIRFLOW_POSTGRES_USER}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    networks:
+      - airflow_network
+    restart: always
+
+  airflow_redis:
+    image: redis:7.2-bookworm
+    container_name: airflow_redis_container
+    expose:
+      - 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
+    networks:
+      - airflow_network
+    restart: always
+
+  airflow-apiserver:
+    <<: *airflow-common
+    container_name: airflow_apiserver_container
+    command: api-server
+    ports:
+      - "${AIRFLOW_WEBSERVER_PORT}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow_scheduler_container
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: airflow_dag_processor_container
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-worker:
+    <<: *airflow-common
+    container_name: airflow_worker_container
+    command: celery worker
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}" || celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    environment:
+      <<: *airflow-common-env
+      DUMB_INIT_SETSID: "0"
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-apiserver:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: airflow_triggerer_container
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow_init_container
+    entrypoint: /entrypoint
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        INIT_FLAG=$${INIT_FLAG:-/opt/airflow/logs/.init_done}
+        INIT_DIR=$$(dirname "$${INIT_FLAG}")
+        mkdir -p "$${INIT_DIR}"
+        if [ -f "$${INIT_FLAG}" ]; then
+          echo "Init already done, skipping."
+          exit 0
+        fi
+
+        airflow db migrate
+        airflow users create \
+          --username "$${_AIRFLOW_WWW_USER_USERNAME:-airflow}" \
+          --password "$${_AIRFLOW_WWW_USER_PASSWORD:-airflow}" \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+
+        touch "$${INIT_FLAG}"
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'false'  # We handle this manually now
+      _AIRFLOW_WWW_USER_CREATE: 'false'  # We handle this manually now
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_WWW_USER_PASSWORD:-airflow}
+      _PIP_ADDITIONAL_REQUIREMENTS: ''
+    user: "0:0"
+    restart: on-failure
+
+  airflow-cli:
+    <<: *airflow-common
+    container_name: airflow_cli_container
+    profiles:
+      - debug
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    command:
+      - bash
+      - -c
+      - airflow
+
+  flower:
+    <<: *airflow-common
+    container_name: airflow_flower_container
+    command: celery flower
+    profiles:
+      - flower
+    ports:
+      - "${AIRFLOW_FLOWER_PORT}:5555"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5555/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ==============================
+  # Data Services
+  # ==============================
   accidents_db:
     build:
       context: .
@@ -19,6 +283,7 @@ services:
       retries: 10
     networks:
       - data_network
+      - airflow_network
   mlflow_db:
     image: postgres:18.1
     container_name: mlflow_db_container
@@ -38,30 +303,30 @@ services:
     networks:
       - mlflow_network
     restart: always
-  # mlflow_minio:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.minio
-  #   container_name: mlflow_minio_container
-  #   environment:
-  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-  #     MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
-  #   ports:
-  #     - "${MINIO_PORT}:9000"
-  #     - "${MINIO_CONSOLE_PORT}:9001"
-  #   volumes:
-  #     - minio_data:/data
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-  #     interval: 5s
-  #     timeout: 3s
-  #     retries: 10
-  #   networks:
-  #     mlflow_network:
-  #       aliases:
-  #         - minio
-  #         - mlflow-minio
+  mlflow_minio:
+    build:
+      context: .
+      dockerfile: Dockerfile.minio
+    container_name: mlflow_minio_container
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      mlflow_network:
+        aliases:
+          - minio
+          - mlflow-minio
   mlflow:
     build:
       context: .
@@ -85,47 +350,148 @@ services:
       AWS_S3_ADDRESSING_STYLE: path
       AWS_ENDPOINT_URL_S3: ${MLFLOW_S3_ENDPOINT_URL}
       MLFLOW_PORT: ${MLFLOW_PORT}
-    command: ["mlflow", "server", "--backend-store-uri", "${MLFLOW_BACKEND_STORE_URI}", "--artifacts-destination", "${MLFLOW_ARTIFACTS_DESTINATION}", "--serve-artifacts", "--host", "0.0.0.0", "--port", "5000"]
+    command: 
+      - mlflow
+      - server
+      - --backend-store-uri
+      - ${MLFLOW_BACKEND_STORE_URI}
+      - --artifacts-destination
+      - ${MLFLOW_ARTIFACTS_DESTINATION}
+      - --serve-artifacts
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5001"
+      - --allowed-hosts
+      - "mlflow:5001,mlflow,localhost:5001,localhost,127.0.0.1:5001,127.0.0.1,airflow*"
     ports:
-      - "${MLFLOW_PORT}:5000"
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
-    #   interval: 10s
-    #   timeout: 5s
-    #   retries: 30
+      - "${MLFLOW_PORT}:5001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     networks:
       - mlflow_network
-
-
-
 
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     container_name: api_container
+    depends_on:
+      mlflow:
+        condition: service_healthy
+      accidents_db:
+        condition: service_healthy
     environment:
+      # Security configuration
       SECRET_KEY: ${SECRET_KEY}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES}
       ALGORITHM: ${ALGORITHM}
+      # Database configuration
+      ACCIDENTS_POSTGRES_HOST: accidents_db
+      ACCIDENTS_POSTGRES_USER: ${ACCIDENTS_POSTGRES_USER}
+      ACCIDENTS_POSTGRES_PASSWORD: ${ACCIDENTS_POSTGRES_PASSWORD}
+      ACCIDENTS_POSTGRES_DB: ${ACCIDENTS_POSTGRES_DB}
+      # MLflow configuration
+      MLFLOW_HOST: mlflow
+      MLFLOW_PORT: ${MLFLOW_PORT}
+      MINIO_HOST: mlflow-minio
+      MINIO_PORT: 9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL}
     ports:
-      - "8000:8000"
-    # volumes:
-    #   - .:/app  
-    # depends_on:
-    #   mlflow:
-    #     condition: service_healthy
-    #   mlflow_minio:
-    #     condition: service_healthy
+      - "${API_PORT}:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 5s
-      timeout: 3s
+      interval: 10s
+      timeout: 5s
       retries: 10
     networks:
-      mlflow_network:
-        aliases:
-          - api
+      - mlflow_network
+      - data_network
+    restart: always
+
+  # ===========================================
+  # Monitoring Services (Prometheus & Grafana)
+  # ===========================================
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: node_exporter_container
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "9100:9100"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9100/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - monitoring_network
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: prometheus_container
+    volumes:
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "${PROMETHEUS_PORT}:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - monitoring_network
+      - mlflow_network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: grafana_container
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_HTTP_PORT: 3000
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - monitoring_network
+    restart: unless-stopped
 
   streamlit:
     build:
@@ -134,24 +500,24 @@ services:
     container_name: streamlit_container
     environment:
       - PYTHONUNBUFFERED=1
-    env_file:
-      - .env
-    # depends_on:
-    #   api:
-    #     condition: service_healthy
+    depends_on:
+      api:
+        condition: service_healthy
     ports:
-      - "${STREAMLIT_EXT_PORT}:${STREAMLIT_CONT_PORT}"
+      - "${STREAMLIT_PORT}:8501"
     networks:
-      mlflow_network:
-        aliases:
-          - streamlit
+      - mlflow_network
+    restart: always
+
 volumes:
+  airflow_db_data:
   accidents_db_data:
   mlflow_db_data:
   minio_data:
+  prometheus_data:
+  grafana_data:
 networks:
+  airflow_network:
   mlflow_network:
   data_network:
-
-
-
+  monitoring_network:

@@ -1,0 +1,24 @@
+# ==============================================================================
+# Dockerfile for Airflow
+# ==============================================================================
+# This Dockerfile extends the official Apache Airflow image and adds
+# project-specific dependencies required by the DAGs.
+# Optimized with uv for faster package installation.
+# ==============================================================================
+
+FROM apache/airflow:3.1.5
+
+USER root
+
+# Install uv for faster Python package installation
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Copy requirements file first for better layer caching
+# This layer will only rebuild if requirements change
+COPY requirements-airflow.txt /requirements-airflow.txt
+
+# Install packages as root (required for system-wide installation)
+RUN uv pip install --system --no-cache-dir -r /requirements-airflow.txt
+
+# Switch back to airflow user for running tasks
+USER airflow

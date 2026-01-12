@@ -1,6 +1,69 @@
-__pycache__/
-.git/
-.env
+# Ignore files that don't need to be in the Docker build context
+# This speeds up builds by reducing context size
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
 .venv/
-models/
+.virtualenv/
+
+# Jupyter notebooks
+*.ipynb_checkpoints
+notebooks/
+
+# Data directories (large files)
 data/
+*.csv
+*.parquet
+
+# Logs
+logs/
+*.log
+airflow/logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+README.md
+references/
+
+# Test files
+tests/
+*.pytest_cache/
+
+# Docker
+docker-compose.yml
+Dockerfile*
+
+# CI/CD
+.github/
+
+# Environment files (already handled by docker-compose)
+.env*
+
+# Monitoring configs (not needed in most containers)
+configs/grafana/
+configs/prometheus/

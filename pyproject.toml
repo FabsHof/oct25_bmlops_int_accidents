@@ -6,13 +6,16 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "bcrypt<4",
-    "fastapi>=0.121.3",
+    "apache-airflow==3.1.5",
+    "evidently>=0.7.0",
     "httpx>=0.28.1",
     "joblib>=1.5.2",
     "kagglehub>=0.3.13",
+    "matplotlib>=3.8.0",
     "mlflow>=3.7.0",
     "pandas>=2.3.3",
     "passlib[bcrypt]>=1.7.4",
+    "prometheus-client>=0.21.0",
     "psycopg2-binary>=2.9.10",
     "pydantic>=2.12.5",
     "python-dotenv>=1.0.0",
@@ -22,13 +25,12 @@ dependencies = [
     "scikit-learn>=1.7.2",
     "streamlit>=1.52.2",
     "uvicorn>=0.38.0",
+    "shap>=0.46.0",
 ]
 
 [dependency-groups]
 dev = [
-    "matplotlib>=3.10.7",
     "pytest>=9.0.1",
-    "seaborn>=0.13.2",
 ]
 
 [tool.pytest.ini_options]

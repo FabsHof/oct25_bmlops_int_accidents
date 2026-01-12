@@ -1,33 +1,26 @@
-# Basis-Image
 FROM python:3.12-slim
 
-# Setze das Arbeitsverzeichnis im Container
+# Install uv for faster Python package installation
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Set working directory
 WORKDIR /app
 
-# Installiere alle notwendigen Python-Pakete direkt
-RUN pip install --no-cache-dir \
-    fastapi \
-    uvicorn[standard] \
-    python-jose[cryptography] \
-    passlib[bcrypt] \
-    "bcrypt<4" \
-    python-dotenv \
-    python-multipart \
-    pandas \
-    psycopg2-binary \
-    joblib
+# Copy requirements file
+COPY requirements-api.txt /requirements-api.txt
 
-# Kopiere den gesamten Code in den Container
-# IMPORTANT that this is after the dependencies for speed of repeated builds (cache in container)
-COPY . .
+# Install Python dependencies
+RUN uv pip install --system --no-cache-dir -r /requirements-api.txt
 
-# Setze Umgebungsvariablen für die API (optional, falls du Defaults willst)
-# # Those variables don't get used.
-# ENV HOST=0.0.0.0
-# ENV PORT=8000
+# Copy necessary application code
+COPY src/api /app/src/api
+COPY src/auth /app/src/auth
+COPY src/models /app/src/models
+COPY src/utils /app/src/utils
+COPY src/__init__.py /app/src/__init__.py
 
-# Exponiere den Port, auf dem die API läuft
-EXPOSE 8000
+# Set environment variables
+ENV PYTHONPATH=/app
 
-# Starte die API mit Uvicorn
+# Start the API with Uvicorn
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

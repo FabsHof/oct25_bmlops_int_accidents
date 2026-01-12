@@ -15,8 +15,8 @@ Start the Streamlit locally with:
 PYTHONPATH=. streamlit run src/streamlit/streamlit_app.py
 
 PYTHONPATH might be needed so that the streamlit server finds the class import in utils when not containerized.
-
 """
+
 import streamlit as st
 # import pandas as pd
 import datetime as dt
@@ -52,8 +52,8 @@ load_dotenv()
 
 ### QUICK VARIABLES
 
-api_ip = os.environ.get("API_BASE_URL", "http://localhost")
-api_port = os.environ.get("API_EXT_PORT") # 8000
+api_ip = "http://localhost" # os.environ.get("API_BASE_URL", "http://localhost")
+api_port = os.environ.get("API_PORT") # 8000
 
 api_base_address = api_ip + ":" + str(api_port)
 
@@ -61,7 +61,7 @@ api_base_address = api_ip + ":" + str(api_port)
 
 ### Loading the API class objects
 
-from src.utils.model_utils import (
+from src.utils.ml_utils import (
     PredictionRequest,
     PredictionResponse
 )
@@ -373,6 +373,7 @@ if page == pages[1]:
 
     def result_display(pred: PredictionResponse):
         st.markdown(f"##### The model predicted the accident severity:\n## {pred.prediction_label}\n##### with a confidence of {pred.confidence}.")
+        st.write("")
 
         if st.checkbox("Show detailed results"):
             data_to_display = {
@@ -401,15 +402,16 @@ if page == pages[1]:
                 "model_version": "accident_severity_rf_20251210_162637"
             }))
 
-    # Testing result display 2CHECK
-    st.markdown("Testing result display (to remove for production version)")
-    result_display(test_pred)
+    # # Testing result display 2CHECK
+    # st.markdown("Testing result display (to remove for production version)")
+    # result_display(test_pred)
 
 
 
 
 
-
+    st.write("")
+    st.write("")
 
     if st.button("Get prediction from best available model"):
 
@@ -449,6 +451,8 @@ if page == pages[1]:
             st.write(f"<h4 style='color: red;'>An unexpected error occurred: <br>{e}</h4>", unsafe_allow_html=True)
             # st.write(f"###### An unexpected error occurred: {e}")  # Alternative without html for color
 
+    st.write("")
+    st.write("")
 
 
 ### GET MODEL INFO
@@ -488,15 +492,6 @@ if page == pages[1]:
         except Exception as e:  # Catch any other exceptions
             st.write(f"<h4 style='color: red;'>An unexpected error occurred: <br>{e}</h4>", unsafe_allow_html=True)
             # st.write(f"###### An unexpected error occurred: {e}")  # Alternative without html for color
-
-
-
-
-### Place holder, confirmed not necessary here: 
-# - ingest data chunk
-# - train model
-# - evaluate performance
-# - get and reset ingestion progress
 
 
 

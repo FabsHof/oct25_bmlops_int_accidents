@@ -82,12 +82,17 @@ def find_latest_csv_directory(raw_data_path: str) -> Optional[Path]:
     csv_dirs = []
     for date_dir in raw_path.iterdir():
         if date_dir.is_dir():
-            # Check subdirectories for CSV files
-            for subdir in date_dir.iterdir():
-                if subdir.is_dir():
-                    csv_files = list(subdir.glob("*.csv"))
-                    if csv_files:
-                        csv_dirs.append(subdir)
+            # First check if the date_dir itself has CSV files
+            csv_files = list(date_dir.glob("*.csv"))
+            if csv_files:
+                csv_dirs.append(date_dir)
+            else:
+                # Check subdirectories for CSV files
+                for subdir in date_dir.iterdir():
+                    if subdir.is_dir():
+                        csv_files = list(subdir.glob("*.csv"))
+                        if csv_files:
+                            csv_dirs.append(subdir)
     
     if not csv_dirs:
         logging.warning(f"No directories with CSV files found in {raw_data_path}")
@@ -315,6 +320,12 @@ def load_next_chunk(raw_data_path: Optional[str] = None, chunk_size: int = DEFAU
     conn = get_db_connection()
     
     try:
+        # Disable foreign key constraints for bulk loading
+        cursor = conn.cursor()
+        cursor.execute("SET session_replication_role = 'replica';")
+        cursor.close()
+        logging.info("Foreign key constraints temporarily disabled for bulk loading")
+        
         # Get current progress
         progress = get_progress_status(conn)
         
@@ -424,22 +435,30 @@ def load_next_chunk(raw_data_path: Optional[str] = None, chunk_size: int = DEFAU
             'message': 'Failed to load data chunk'
         }
     finally:
+        # Re-enable foreign key constraints
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SET session_replication_role = 'origin';")
+            cursor.close()
+            conn.commit()
+        except Exception as e:
+            logging.warning(f"Failed to re-enable foreign key constraints: {e}")
         if conn:
             conn.close()
 
 
 def reset_progress(raw_data_path: Optional[str] = None, chunk_size: int = DEFAULT_CHUNK_SIZE) -> Dict[str, Any]:
     """
-    Reset the progress tracking to start from the beginning.
+    Start a new ingestion cycle for the specified data directory.
     
     Args:
-        raw_data_path: Path to raw data directory (uses env var DATA_RAW_PATH if not provided)
+        raw_data_path: Path to specific data directory or base path to search (uses env var RAW_DATA_PATH if not provided)
         chunk_size: Number of rows to load per chunk
         
     Returns:
         Dictionary with reset status
     """
-    logging.info("Resetting data ingestion progress...")
+    logging.info("Starting new ingestion cycle...")
     
     # Get raw data path from argument or environment variable
     if raw_data_path is None:
@@ -448,12 +467,19 @@ def reset_progress(raw_data_path: Optional[str] = None, chunk_size: int = DEFAUL
     conn = get_db_connection()
     
     try:
-        # Find CSV directory
-        csv_dir = find_latest_csv_directory(raw_data_path)
-        if csv_dir is None:
-            raise ValueError(f"No CSV files found in {raw_data_path}")
+        # Check if raw_data_path is a specific directory with CSV files
+        csv_dir = Path(raw_data_path)
+        csv_files = list(csv_dir.glob("*.csv"))
         
-        # Reset progress
+        if not csv_files:
+            # No CSV files found directly, search for latest directory
+            csv_dir = find_latest_csv_directory(raw_data_path)
+            if csv_dir is None:
+                raise ValueError(f"No CSV files found in {raw_data_path}")
+        
+        logging.info(f"Using CSV directory: {csv_dir}")
+        
+        # Initialize progress with new version
         db_reset_progress(conn, csv_dir, chunk_size)
         
         return {
