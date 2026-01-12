@@ -1,6 +1,24 @@
-# 🚗 Road accidents in France
+# 🚗 Road Accidents Severity Prediction - France
 
-The objective of this MLOps project is to build a MLOps pipeline with the aim of predicting the severity of road accidents in France. Predictions will be based on historical data.
+## 🎯 Project Goal
+
+This MLOps project demonstrates a **production-grade machine learning pipeline** for predicting the severity of traffic accidents in France. The system helps emergency services and traffic management authorities prioritize response efforts by predicting accident outcomes based on environmental, temporal, and participant characteristics.
+
+**Key Objectives:**
+- Build an end-to-end MLOps pipeline with orchestration, monitoring, and serving capabilities
+- Predict accident severity (Unscathed, Light injury, Hospitalized, Killed) from 16 features
+- Implement model versioning, drift detection, and automated retraining workflows
+- Provide a production-ready REST API with JWT authentication and Prometheus metrics
+
+## 📊 Dataset
+
+**Source**: [Accidents in France from 2005 to 2016](https://www.kaggle.com/datasets/ahmedlahlou/accidents-in-france-from-2005-to-2016/data) (Kaggle)
+
+**Description**: Historical road accident data from the French government containing detailed information about accidents, vehicles, and users involved. The dataset includes:
+- **Features**: 16 columns including temporal (year, month, hour), environmental (weather, luminosity, road type), and demographic factors (age, sex, user category)
+- **Target**: Severity with 4 classes (1=Unscathed, 2=Light injury, 3=Hospitalized, 4=Killed)
+- **Size**: 11+ years of accident records
+- **Split**: 60% train, 20% validation, 20% test (stratified sampling)
 
 ## ↪️ Architecture Overview
 
@@ -123,34 +141,76 @@ flowchart LR
 ## 🗂️ Project Organization
 
 The project is structured as follows:
-    ├── README.md          <- The top-level README for developers using this project.
-    ├── data
-    │   ├── external       <- Data from third party sources.
-    │   ├── interim        <- Intermediate data that has been transformed.
-    │   ├── processed      <- The final, canonical data sets for modeling.
-    │   └── raw            <- The original, immutable data dump.
-    │
-    ├── logs               <- Logs from training and predicting
-    │
-    ├── models             <- Trained and serialized models, model predictions, or model summaries
-    │
-    ├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-    │                         the creator's initials, and a short `-` delimited description, e.g.
-    │                         `1.0-jqp-initial-data-exploration`.
-    │
-    ├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-    │
-    ├── src                <- Source code for use in this project.
-    │   ├── __init__.py    <- Makes src a Python module
-    │   │
-    │   ├── data           <- Scripts to download or generate data
-    │   │
-    │   ├── features       <- Scripts to turn raw data into features for modeling
-    │   │
-    │   ├── models         <- Scripts to train models and then use trained models to make
-    │   │                     predictions
-    │   │
-    │   └── config         <- Describe the parameters used in train_model.py and predict_model.py
+```plaintext
+.
+├── README.md                  <- Project overview and setup instructions
+├── docker-compose.yml         <- Multi-container orchestration (8 services)
+├── Dockerfile.*               <- Service-specific container definitions
+├── Makefile                   <- Common development commands (up, down, build, test)
+├── pyproject.toml             <- Python dependencies and project metadata
+├── requirements-*.txt         <- Service-specific Python requirements
+│
+├── .env                       <- Environment variables (create from .env.example)
+├── .github/                   <- GitHub configuration and AI agent instructions
+│
+├── airflow/                   <- Airflow-specific files
+│   ├── config/                <- Airflow configuration (airflow.cfg)
+│   ├── logs/                  <- DAG execution logs and reports
+│   └── plugins/               <- Custom Airflow plugins
+│
+├── configs/                   <- Service configurations
+│   ├── grafana/               <- Grafana dashboards and provisioning
+│   └── prometheus/            <- Prometheus scraping configuration
+│
+├── dags/                      <- Airflow DAG definitions
+│   ├── accidents_data_dag.py  <- ETL pipeline for data ingestion
+│   ├── accidents_ml_dag.py    <- ML training and evaluation pipeline
+│   └── accidents_dag.py       <- Combined ETL + ML orchestration
+│
+├── data/
+│   ├── raw/                   <- Original data from Kaggle (timestamped)
+│   └── clean/                 <- Processed data ready for modeling
+│
+├── models/                    <- Saved model artifacts (if not in MLflow)
+├── notebooks/                 <- Jupyter notebooks for exploration
+├── references/                <- Data dictionaries and documentation
+├── scripts/                   <- Utility scripts (DB seeding, entrypoints)
+│
+├── src/                       <- Source code for the project
+│   ├── __init__.py
+│   ├── api/                   <- FastAPI application
+│   │   └── main.py            <- REST endpoints (/predict, /health, /metrics)
+│   ├── auth/                  <- JWT authentication and user management
+│   ├── data/                  <- Data processing scripts
+│   │   ├── download_data.py   <- Kaggle dataset download
+│   │   ├── clean_data.py      <- Data cleaning and merging
+│   │   └── ingest_data.py     <- Database ingestion with progress tracking
+│   ├── features/              <- Feature engineering (currently unused)
+│   ├── models/                <- Model training and prediction
+│   │   ├── train_model.py     <- Training with GridSearchCV
+│   │   ├── predict_model.py   <- Prediction logic and model loading
+│   │   └── metrics.py         <- Custom metrics and evaluation
+│   ├── monitoring/            <- Drift detection and explainability
+│   │   ├── drift.py           <- Evidently-based drift detection
+│   │   ├── drift_reporter.py  <- Report generation and storage
+│   │   └── explainability.py  <- SHAP values and model interpretation
+│   ├── streamlit/             <- User-facing Streamlit application
+│   │   ├── Home.py            <- Main entry point
+│   │   └── pages/             <- Multi-page app components
+│   └── utils/                 <- Shared utilities
+│       ├── ml_utils.py        <- Central ML config and constants
+│       ├── database.py        <- DB connection and progress tracking
+│       ├── logging.py         <- Logging configuration
+│       └── schemas.py         <- Pydantic models and data schemas
+│
+└── tests/                     <- Test suite
+    └── unit/                  <- Unit tests mirroring src/ structure
+        ├── api/
+        ├── data/
+        ├── models/
+        ├── monitoring/
+        └── utils/
+```
 
 ## 🛫 Prerequisites
 
@@ -164,25 +224,45 @@ The project is structured as follows:
 2. install [Docker](https://docs.docker.com/get-docker/).
 3. create `.env` from the `.env.example` file and adapt values if needed
 
+## 🚀 Quick Start
+
+Get the entire MLOps pipeline running in 3 commands:
+
+```bash
+uv sync && source .venv/bin/activate  # Install dependencies
+cp .env.example .env                  # Configure environment
+make build && make up                 # Start all services
+```
+
+**Access Services:**
+| Service | URL | Default Credentials |
+|---------|-----|---------------------|
+| Airflow UI | http://localhost:8080 | `airflow` / `airflow` |
+| MLflow Tracking | http://localhost:5001 | - |
+| FastAPI Docs | http://localhost:8000/docs | JWT token required |
+| Streamlit UI | http://localhost:8501 | - |
+| Grafana | http://localhost:3000 | `admin` / `admin` |
+| MinIO Console | http://localhost:9000 | `mini_user` / `mini_password` |
+
 ## ⌨️ Development Setup
 
-> do this every time you start working on the project.
+> Do this every time you start working on the project.
 
-1. sync dependencies and enable virtual environment:
+1. Sync dependencies and activate virtual environment:
    ```bash
    uv sync
    source .venv/bin/activate
    ```
-2. start 🐳 Docker containers:
+2. Start 🐳 Docker containers:
    ```bash
-   make build  # improved build process
-   make up     # start containers in detached mode
+   make build  # Build images with BuildKit
+   make up     # Start containers in detached mode
    ```
-3. access services (see default credentials below, change in `.env` file if needed):
-   - **Airflow UI**: `http://localhost:8080` (default credentials: `airflow` / `airflow`)
-   - **Grafana**: `http://localhost:3000` (default credentials: `admin` / `admin`)
-   - **MLflow UI**: `http://localhost:5001` (default credentials: `mlflow` / `mlflow`)
-   - **MinIO UI**: `http://localhost:9000` (default credentials: `mini_user` / `mini_password`)
+3. Verify all services are healthy:
+   ```bash
+   docker ps  # Check container status
+   make logs  # Follow container logs
+   ```
 
 
 ## 🪁 Airflow DAGs
@@ -209,16 +289,29 @@ The project includes the following Airflow DAGs for orchestrating workflows:
 - **Metrics**: Accuracy, Precision, Recall, F1-score (weighted), ROC-AUC
 - **Artifacts**: Model, metrics, feature importance, confusion matrix, config
 
-## Streamlit Presentation
+## 🖥️ Local Development (Without Docker)
 
-1. **Start the API locally with:**
-   ```bash
-   uvicorn src.api.main:app --reload
-   ```
+For faster iteration during development:
 
-2. **Start the Streamlit App locally with:**
-   ```bash
-   PYTHONPATH=. streamlit run src/streamlit/streamlit_app.py
-   ```
-3. **The Streamlit App can be accessed at:\n**
-   http://localhost:8501/
+**1. Start the API locally:**
+```bash
+uvicorn src.api.main:app --reload
+```
+
+**2. Start the Streamlit App:**
+```bash
+PYTHONPATH=. streamlit run src/streamlit/Home.py
+```
+
+**3. Access at:**
+- API: http://localhost:8000/docs
+- Streamlit: http://localhost:8501
+
+**Note**: Ensure PostgreSQL, MLflow, and MinIO containers are running for database and model access.
+
+## 📚 Additional Resources
+
+- **Architecture Diagram**: See mermaid flowchart above for data flow
+- **API Documentation**: Interactive docs at `/docs` endpoint (FastAPI auto-generated)
+- **Model Training**: See `src/models/train_model.py` for standalone training script
+- **DAG Documentation**: Detailed docstrings in `dags/*.py` files
