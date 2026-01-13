@@ -101,7 +101,7 @@
         },
         "targets": [
           {
-            "expr": "histogram_quantile(0.95, prediction_latency_seconds_bucket)",
+            "expr": "histogram_quantile(0.95, sum(rate(prediction_latency_seconds_bucket[5m])) by (le)) or vector(0)",
             "legendFormat": "P95 Latency",
             "refId": "A"
           }

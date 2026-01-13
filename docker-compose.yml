@@ -447,6 +447,7 @@ services:
     container_name: prometheus_container
     volumes:
       - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./configs/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -496,10 +497,7 @@ services:
   alertmanager:
     image: prom/alertmanager:v0.26.0
     container_name: alertmanager_container
-    command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
-      - '--storage.path=/alertmanager'
-      - '--web.external-url=http://localhost:9093'
+    entrypoint: ["/scripts/alertmanager-entrypoint.sh"]
     environment:
       # SMTP configuration from .env
       ALERTMANAGER_EMAIL_FROM: ${ALERTMANAGER_EMAIL_FROM}
@@ -515,6 +513,7 @@ services:
       ALERTMANAGER_EMAIL_ML_TEAM: ${ALERTMANAGER_EMAIL_ML_TEAM}
       ALERTMANAGER_EMAIL_OPS_TEAM: ${ALERTMANAGER_EMAIL_OPS_TEAM}
     volumes:
+      - ./scripts/alertmanager-entrypoint.sh:/scripts/alertmanager-entrypoint.sh:ro
       - ./configs/alertmanager:/etc/alertmanager:ro
       - alertmanager_data:/alertmanager
     ports:

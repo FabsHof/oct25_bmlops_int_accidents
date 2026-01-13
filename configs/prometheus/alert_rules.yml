@@ -18,14 +18,14 @@ groups:
           runbook_url: "https://wiki.example.com/runbooks/api-down"
 
       - alert: HighPredictionLatency
-        expr: prediction_latency_seconds_bucket{le="1.0"} < 0.5 * prediction_latency_seconds_count
+        expr: histogram_quantile(0.95, sum(rate(prediction_latency_seconds_bucket[5m])) by (le)) > 1.0
         for: 5m
         labels:
           severity: warning
           component: api
         annotations:
           summary: "High prediction latency detected"
-          description: "More than 50% of predictions are taking longer than 1 second. P95 latency: {{ $value }}s"
+          description: "95th percentile prediction latency is {{ $value | humanizeDuration }}. Threshold: 1s"
           runbook_url: "https://wiki.example.com/runbooks/high-latency"
 
       # NOTE: HighPredictionErrorRate removed - requires adding status labels to predictions_total counter
@@ -43,14 +43,17 @@ groups:
           runbook_url: "https://wiki.example.com/runbooks/no-predictions"
 
       - alert: HighPredictionErrorRate
-        expr: rate(prediction_errors_total[5m]) / (rate(predictions_total[5m]) + 0.001) > 0.05
+        expr: |
+          sum(rate(prediction_errors_total[5m])) by (error_type)
+          / 
+          (sum(rate(predictions_total[5m])) + 0.001) > 0.05
         for: 5m
         labels:
           severity: warning
           component: api
         annotations:
           summary: "High prediction error rate"
-          description: "More than 5% of prediction requests are failing. Error type: {{ $labels.error_type }}"
+          description: "More than 5% of prediction requests are failing. Error rate: {{ $value | humanizePercentage }}. Error type: {{ $labels.error_type }}"
           runbook_url: "https://wiki.example.com/runbooks/high-error-rate"
 
       # ========================================
