@@ -493,6 +493,41 @@ services:
       - monitoring_network
     restart: unless-stopped
 
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: alertmanager_container
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    environment:
+      # SMTP configuration from .env
+      ALERTMANAGER_EMAIL_FROM: ${ALERTMANAGER_EMAIL_FROM}
+      ALERTMANAGER_SMTP_HOST: ${ALERTMANAGER_SMTP_HOST}
+      ALERTMANAGER_SMTP_PORT: ${ALERTMANAGER_SMTP_PORT}
+      ALERTMANAGER_SMTP_USER: ${ALERTMANAGER_SMTP_USER}
+      ALERTMANAGER_SMTP_PASSWORD: ${ALERTMANAGER_SMTP_PASSWORD}
+      # Email recipients
+      ALERTMANAGER_EMAIL_TO: ${ALERTMANAGER_EMAIL_TO}
+      ALERTMANAGER_EMAIL_CRITICAL: ${ALERTMANAGER_EMAIL_CRITICAL}
+      ALERTMANAGER_EMAIL_WARNING: ${ALERTMANAGER_EMAIL_WARNING}
+      ALERTMANAGER_EMAIL_DATA_TEAM: ${ALERTMANAGER_EMAIL_DATA_TEAM}
+      ALERTMANAGER_EMAIL_ML_TEAM: ${ALERTMANAGER_EMAIL_ML_TEAM}
+      ALERTMANAGER_EMAIL_OPS_TEAM: ${ALERTMANAGER_EMAIL_OPS_TEAM}
+    volumes:
+      - ./configs/alertmanager:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9093/-/healthy || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - monitoring_network
+    restart: unless-stopped
+
   # ==============================
   # Streamlit Frontend
   # ==============================
@@ -524,6 +559,7 @@ volumes:
   minio_data:
   prometheus_data:
   grafana_data:
+  alertmanager_data:
 networks:
   airflow_network:
   mlflow_network:

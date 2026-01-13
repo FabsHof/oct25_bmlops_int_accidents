@@ -89,6 +89,20 @@ predictions_by_severity = Counter(
     registry=registry,
 )
 
+prediction_errors = Counter(
+    "prediction_errors_total",
+    "Total number of prediction errors",
+    ["error_type"],
+    registry=registry,
+)
+
+api_requests_total = Counter(
+    "api_requests_total",
+    "Total number of API requests",
+    ["endpoint", "method", "status"],
+    registry=registry,
+)
+
 data_drift_score = Gauge(
     "data_drift_score",
     "Latest data drift score (0-1)",
@@ -214,13 +228,19 @@ def predict_severity(
         predictions_total.inc()
         prediction_latency_seconds.observe(time.perf_counter() - start_time)
         predictions_by_severity.labels(severity=result.get('prediction_label', 'unknown')).inc()
+        api_requests_total.labels(endpoint="/predict", method="POST", status="success").inc()
         
         return PredictionResponse(**result)
         
-    except HTTPException:
-        # Re-raise HTTP exceptions
+    except HTTPException as http_exc:
+        # Track HTTP errors
+        prediction_errors.labels(error_type="http_error").inc()
+        api_requests_total.labels(endpoint="/predict", method="POST", status=str(http_exc.status_code)).inc()
         raise
     except Exception as e:
+        # Track general errors
+        prediction_errors.labels(error_type="prediction_failed").inc()
+        api_requests_total.labels(endpoint="/predict", method="POST", status="500").inc()
         raise HTTPException(
             status_code=500,
             detail=f"Prediction failed: {str(e)}"

@@ -1,0 +1,88 @@
+{{ define "email.warning.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: #fff3e0;
+            padding: 20px;
+            border-left: 4px solid #ff9800;
+            margin-bottom: 20px;
+        }
+        .alert {
+            background: #fff;
+            border: 1px solid #ff9800;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .label {
+            display: inline-block;
+            padding: 3px 8px;
+            margin: 2px;
+            background: #ff9800;
+            color: white;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>⚠️ Warning Alert Notification</h2>
+        <p><strong>Status:</strong> {{ .Status | toUpper }}</p>
+        <p><strong>Alert Count:</strong> {{ len .Alerts }}</p>
+        <p>These alerts indicate potential issues that should be investigated within 30 minutes.</p>
+    </div>
+
+    {{ if gt (len .Alerts.Firing) 0 }}
+    <h3>Active Warnings ({{ len .Alerts.Firing }})</h3>
+    {{ range .Alerts.Firing }}
+    <div class="alert">
+        <h4>⚠️ {{ .Labels.alertname }}</h4>
+        <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+        <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+        
+        <p><strong>Component:</strong> <span class="label">{{ if .Labels.component }}{{ .Labels.component }}{{ else }}unknown{{ end }}</span></p>
+        <p><strong>Started:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+        
+        {{ if .Annotations.runbook_url }}
+        <p><strong>Runbook:</strong> <a href="{{ .Annotations.runbook_url }}">{{ .Annotations.runbook_url }}</a></p>
+        {{ end }}
+    </div>
+    {{ end }}
+    {{ end }}
+
+    {{ if gt (len .Alerts.Resolved) 0 }}
+    <h3>✅ Resolved Warnings</h3>
+    {{ range .Alerts.Resolved }}
+    <div style="background: #e8f5e9; border: 1px solid #4caf50; padding: 15px; margin-bottom: 15px; border-radius: 4px;">
+        <h4>{{ .Labels.alertname }}</h4>
+        <p>Resolved at: {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+    </div>
+    {{ end }}
+    {{ end }}
+
+    <div class="footer">
+        <p>MLOps Accidents Prediction System - Warning Alerts</p>
+        <p><a href="http://localhost:9093">View in Alertmanager</a> | <a href="http://localhost:3000">Grafana Dashboards</a></p>
+    </div>
+</body>
+</html>
+{{ end }}

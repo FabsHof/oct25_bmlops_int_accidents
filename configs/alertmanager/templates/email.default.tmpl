@@ -1,0 +1,136 @@
+{{ define "email.default.html" }}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: #f4f4f4;
+            padding: 20px;
+            border-left: 4px solid #ff9800;
+            margin-bottom: 20px;
+        }
+        .alert {
+            background: #fff;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .alert-critical {
+            border-left: 4px solid #f44336;
+            background: #ffebee;
+        }
+        .alert-warning {
+            border-left: 4px solid #ff9800;
+            background: #fff3e0;
+        }
+        .alert-resolved {
+            border-left: 4px solid #4caf50;
+            background: #e8f5e9;
+        }
+        .label {
+            display: inline-block;
+            padding: 3px 8px;
+            margin: 2px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        .label-severity-critical {
+            background: #f44336;
+            color: white;
+        }
+        .label-severity-warning {
+            background: #ff9800;
+            color: white;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            font-size: 12px;
+            color: #666;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+        }
+        th, td {
+            text-align: left;
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f4f4f4;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>🔔 MLOps Alert Notification</h2>
+        <p><strong>Status:</strong> {{ .Status | toUpper }}</p>
+        <p><strong>Alert Count:</strong> {{ len .Alerts }}</p>
+    </div>
+
+    {{ if gt (len .Alerts.Firing) 0 }}
+    <h3>🔥 Firing Alerts ({{ len .Alerts.Firing }})</h3>
+    {{ range .Alerts.Firing }}
+    <div class="alert alert-{{ .Labels.severity }}">
+        <h4>{{ .Labels.alertname }}</h4>
+        <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+        <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+        
+        <p><strong>Labels:</strong></p>
+        <div>
+            {{ range .Labels.SortedPairs }}
+            <span class="label label-{{ .Name }}-{{ .Value }}">{{ .Name }}: {{ .Value }}</span>
+            {{ end }}
+        </div>
+        
+        <p><strong>Started:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+        
+        {{ if .Annotations.runbook_url }}
+        <p><strong>Runbook:</strong> <a href="{{ .Annotations.runbook_url }}">{{ .Annotations.runbook_url }}</a></p>
+        {{ end }}
+    </div>
+    {{ end }}
+    {{ end }}
+
+    {{ if gt (len .Alerts.Resolved) 0 }}
+    <h3>✅ Resolved Alerts ({{ len .Alerts.Resolved }})</h3>
+    {{ range .Alerts.Resolved }}
+    <div class="alert alert-resolved">
+        <h4>{{ .Labels.alertname }}</h4>
+        <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+        
+        <p><strong>Duration:</strong> {{ .StartsAt.Format "15:04:05" }} - {{ .EndsAt.Format "15:04:05" }}</p>
+        <p><strong>Resolved at:</strong> {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+    </div>
+    {{ end }}
+    {{ end }}
+
+    <div class="footer">
+        <p>This alert was sent by Alertmanager for the MLOps Accidents Prediction System.</p>
+        <p>
+            <strong>Quick Links:</strong><br>
+            • <a href="http://localhost:9093">Alertmanager Dashboard</a><br>
+            • <a href="http://localhost:9090">Prometheus</a><br>
+            • <a href="http://localhost:3000">Grafana</a><br>
+            • <a href="http://localhost:8080">Airflow</a>
+        </p>
+        <p><em>To stop receiving these alerts, contact your system administrator.</em></p>
+    </div>
+</body>
+</html>
+{{ end }}

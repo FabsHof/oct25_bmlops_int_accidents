@@ -128,7 +128,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(prediction_latency_seconds_sum[5m]) / rate(prediction_latency_seconds_count[5m])",
+          "expr": "histogram_quantile(0.5, rate(prediction_latency_seconds_bucket[5m]))",
           "refId": "A"
         }
       ]
@@ -279,7 +279,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "predictions_by_severity",
+          "expr": "sum by (severity) (predictions_by_severity)",
           "legendFormat": "{{severity}}",
           "refId": "A"
         }

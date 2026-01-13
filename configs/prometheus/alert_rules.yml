@@ -1,0 +1,147 @@
+groups:
+  - name: accidents_mlops_alerts
+    interval: 30s
+    rules:
+      # ========================================
+      # API & Service Health Alerts
+      # ========================================
+      
+      - alert: APIServiceDown
+        expr: up{job="fastapi"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "FastAPI service is down"
+          description: "The FastAPI prediction service ({{ $labels.instance }}) has been unreachable for 2 minutes."
+          runbook_url: "https://wiki.example.com/runbooks/api-down"
+
+      - alert: HighPredictionLatency
+        expr: prediction_latency_seconds_bucket{le="1.0"} < 0.5 * prediction_latency_seconds_count
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High prediction latency detected"
+          description: "More than 50% of predictions are taking longer than 1 second. P95 latency: {{ $value }}s"
+          runbook_url: "https://wiki.example.com/runbooks/high-latency"
+
+      # NOTE: HighPredictionErrorRate removed - requires adding status labels to predictions_total counter
+      # To enable: Add .labels(status="success").inc() to API code
+
+      - alert: NoPredictionsServed
+        expr: increase(predictions_total[30m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "No predictions served in last 30 minutes"
+          description: "The API may not be receiving traffic or predictions are failing silently."
+          runbook_url: "https://wiki.example.com/runbooks/no-predictions"
+
+      - alert: HighPredictionErrorRate
+        expr: rate(prediction_errors_total[5m]) / (rate(predictions_total[5m]) + 0.001) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High prediction error rate"
+          description: "More than 5% of prediction requests are failing. Error type: {{ $labels.error_type }}"
+          runbook_url: "https://wiki.example.com/runbooks/high-error-rate"
+
+      # ========================================
+      # Data Quality & Drift Alerts
+      # ========================================
+
+      - alert: HighDataDrift
+        expr: data_drift_score > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          component: data_quality
+        annotations:
+          summary: "High data drift detected"
+          description: "Data drift score ({{ $value | humanize }}) exceeds threshold of 0.3. Model may be performing worse than expected."
+          runbook_url: "https://wiki.example.com/runbooks/high-drift"
+
+      - alert: CriticalDataDrift
+        expr: data_drift_score > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          component: data_quality
+        annotations:
+          summary: "CRITICAL: Extreme data drift detected"
+          description: "Data drift score ({{ $value | humanize }}) exceeds critical threshold of 0.5. Retrain model immediately!"
+          runbook_url: "https://wiki.example.com/runbooks/critical-drift"
+
+      - alert: HighFeatureDrift
+        expr: feature_drift > 0.4
+        for: 10m
+        labels:
+          severity: warning
+          component: data_quality
+        annotations:
+          summary: "High feature-level drift detected"
+          description: "Feature '{{ $labels.feature }}' has drift score {{ $value | humanize }} (threshold: 0.4). May indicate changing data distribution."
+          runbook_url: "https://wiki.example.com/runbooks/feature-drift"
+
+      # ========================================
+      # Model Management Alerts
+      # ========================================
+
+      # NOTE: NoChampionModelAvailable alert removed - requires implementing model health metric in API
+      # Recommendation: Add a /health/model endpoint that returns model_loaded gauge
+
+      # ========================================
+      # Pipeline & Infrastructure Alerts
+      # ========================================
+
+      # NOTE: Infrastructure alerts removed - require node-exporter, cAdvisor, and Airflow Prometheus exporter
+      # To enable: Add these services to docker-compose.yml:
+      #   - node-exporter (system metrics)
+      #   - cadvisor (container metrics) 
+      #   - airflow-exporter or StatsD (Airflow DAG metrics)
+
+      - alert: MLflowServerDown
+        expr: up{job="mlflow"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: mlflow
+        annotations:
+          summary: "MLflow tracking server is down"
+          description: "MLflow server ({{ $labels.instance }}) is unreachable. Model tracking and serving will be affected."
+          runbook_url: "https://wiki.example.com/runbooks/mlflow-down"
+
+      # ========================================
+      # Model Quality Alerts
+      # ========================================
+
+      - alert: ModelPerformanceDegraded
+        expr: |
+          increase(predictions_by_severity{severity="4"}[1h]) / (increase(predictions_total[1h]) + 0.001) > 0.3
+        for: 30m
+        labels:
+          severity: warning
+          component: model_quality
+        annotations:
+          summary: "Model predicting high severity too frequently"
+          description: "More than 30% of recent predictions are for severity=4 (killed). May indicate drift or model degradation."
+          runbook_url: "https://wiki.example.com/runbooks/model-degradation"
+
+      - alert: ModelRetrainingNeeded
+        expr: |
+          data_drift_score > 0.2 and increase(predictions_total[24h]) > 100
+        for: 1h
+        labels:
+          severity: info
+          component: model
+        annotations:
+          summary: "Model retraining recommended"
+          description: "Data drift detected ({{ $value | humanize }}) with 100+ predictions served in last 24h. Consider retraining."
+          runbook_url: "https://wiki.example.com/runbooks/retrain-recommended"

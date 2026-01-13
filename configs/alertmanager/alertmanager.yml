@@ -1,0 +1,145 @@
+global:
+  resolve_timeout: 5m
+  # SMTP configuration for email alerts
+  smtp_from: '${ALERTMANAGER_EMAIL_FROM}'
+  smtp_smarthost: '${ALERTMANAGER_SMTP_HOST}:${ALERTMANAGER_SMTP_PORT}'
+  smtp_auth_username: '${ALERTMANAGER_SMTP_USER}'
+  smtp_auth_password: '${ALERTMANAGER_SMTP_PASSWORD}'
+  smtp_require_tls: true
+
+# Templates for email formatting
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route tree for alert distribution
+route:
+  # Default receiver for all alerts
+  receiver: 'email-default'
+  
+  # Group alerts by these labels to reduce noise
+  group_by: ['alertname', 'cluster', 'service']
+  
+  # Wait time before sending initial notification
+  group_wait: 30s
+  
+  # Wait time before sending notifications about new alerts in same group
+  group_interval: 5m
+  
+  # Wait time before re-sending a notification for an alert
+  repeat_interval: 4h
+  
+  # Child routes with specific routing rules
+  routes:
+    # Critical alerts - immediate notification, no grouping delay
+    - match:
+        severity: critical
+      receiver: 'email-critical'
+      group_wait: 10s
+      repeat_interval: 30m
+      continue: false
+    
+    # Warning alerts - grouped and sent less frequently
+    - match:
+        severity: warning
+      receiver: 'email-warning'
+      group_wait: 1m
+      repeat_interval: 2h
+      continue: false
+    
+    # Data quality alerts
+    - match:
+        component: data_quality
+      receiver: 'email-data-team'
+      continue: false
+    
+    # ML model alerts
+    - match_re:
+        component: model|mlflow
+      receiver: 'email-ml-team'
+      continue: false
+    
+    # Infrastructure alerts
+    - match:
+        component: infrastructure
+      receiver: 'email-ops-team'
+      continue: false
+
+# Alert receivers (notification destinations)
+receivers:
+  # Default receiver for general alerts
+  - name: 'email-default'
+    email_configs:
+      - to: '${ALERTMANAGER_EMAIL_TO}'
+        send_resolved: true
+        headers:
+          Subject: '[MLOps Alert] {{ .GroupLabels.alertname }}'
+        html: '{{ template "email.default.html" . }}'
+
+  # Critical alerts receiver
+  - name: 'email-critical'
+    email_configs:
+      - to: '${ALERTMANAGER_EMAIL_CRITICAL}'
+        send_resolved: true
+        headers:
+          Subject: '🚨 [CRITICAL] {{ .GroupLabels.alertname }}'
+          Priority: 'urgent'
+        html: '{{ template "email.critical.html" . }}'
+
+  # Warning alerts receiver
+  - name: 'email-warning'
+    email_configs:
+      - to: '${ALERTMANAGER_EMAIL_WARNING}'
+        send_resolved: true
+        headers:
+          Subject: '⚠️ [WARNING] {{ .GroupLabels.alertname }}'
+        html: '{{ template "email.warning.html" . }}'
+
+  # Data team alerts
+  - name: 'email-data-team'
+    email_configs:
+      - to: '${ALERTMANAGER_EMAIL_DATA_TEAM}'
+        send_resolved: true
+        headers:
+          Subject: '[Data Quality] {{ .GroupLabels.alertname }}'
+        html: '{{ template "email.default.html" . }}'
+
+  # ML team alerts
+  - name: 'email-ml-team'
+    email_configs:
+      - to: '${ALERTMANAGER_EMAIL_ML_TEAM}'
+        send_resolved: true
+        headers:
+          Subject: '[ML Model] {{ .GroupLabels.alertname }}'
+        html: '{{ template "email.default.html" . }}'
+
+  # Operations team alerts
+  - name: 'email-ops-team'
+    email_configs:
+      - to: '${ALERTMANAGER_EMAIL_OPS_TEAM}'
+        send_resolved: true
+        headers:
+          Subject: '[Infrastructure] {{ .GroupLabels.alertname }}'
+        html: '{{ template "email.default.html" . }}'
+
+# Inhibition rules - suppress alerts based on other alerts
+inhibit_rules:
+  # If APIServiceDown is firing, suppress HighPredictionLatency
+  - source_match:
+      alertname: APIServiceDown
+    target_match:
+      alertname: HighPredictionLatency
+    equal: ['instance']
+  
+  # If critical drift detected, suppress warning drift
+  - source_match:
+      alertname: CriticalDataDrift
+    target_match:
+      alertname: HighDataDrift
+    equal: ['instance']
+  
+  # If MLflow is down, suppress model-related alerts
+  - source_match:
+      alertname: MLflowServerDown
+    target_match_re:
+      component: model|mlflow
+    equal: ['instance']
