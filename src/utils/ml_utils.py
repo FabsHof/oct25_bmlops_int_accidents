@@ -304,7 +304,10 @@ def evaluate_model(
         dataset,
         model_type=model_type,
         evaluator_config={
-            'log_explainer': True,
+            'log_explainer': False,
+            'log_model_explainability': False,
+            'explainability_algorithm': None,
+            'log_shap_values': False,
         },
         extra_metrics=extra_metrics
     )

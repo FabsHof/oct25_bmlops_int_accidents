@@ -83,6 +83,7 @@ class SHAPExplainer:
     def _get_explainer(self, X: pd.DataFrame) -> shap.Explainer:
         """
         Get or create a SHAP explainer for the model.
+        Uses tree_path_dependent feature perturbation to avoid background data overhead.
         
         Args:
             X: Sample data for explainer initialization
@@ -96,8 +97,13 @@ class SHAPExplainer:
             
             # Use TreeExplainer for tree-based models (faster)
             try:
-                self._explainer = shap.TreeExplainer(self.model)
-                logger.info("Using TreeExplainer for tree-based model")
+                # Use tree_path_dependent to avoid background dataset overhead
+                # This uses training samples in the model for background distribution
+                self._explainer = shap.TreeExplainer(
+                    self.model,
+                    feature_perturbation='tree_path_dependent'
+                )
+                logger.info("Using TreeExplainer with tree_path_dependent perturbation")
             except Exception:
                 # Fallback to KernelExplainer for other models
                 logger.info("Falling back to KernelExplainer")
@@ -112,14 +118,18 @@ class SHAPExplainer:
     def compute_shap_values(
         self,
         X: pd.DataFrame,
-        sample_size: Optional[int] = 1000
+        sample_size: Optional[int] = 500,
+        approximate: bool = True,
+        check_additivity: bool = False
     ) -> np.ndarray:
         """
-        Compute SHAP values for a dataset.
+        Compute SHAP values for a dataset with optimized performance.
         
         Args:
             X: Feature DataFrame
-            sample_size: Maximum samples to use (for performance)
+            sample_size: Maximum samples to use (for performance, default 500)
+            approximate: Use fast approximate SHAP computation (Saabas method)
+            check_additivity: Validate SHAP value additivity (slower, default False)
             
         Returns:
             Array of SHAP values
@@ -133,12 +143,20 @@ class SHAPExplainer:
         
         explainer = self._get_explainer(X_sample)
         
-        logger.info("Computing SHAP values...")
-        self._shap_values = explainer.shap_values(X_sample)
+        mode_info = "approximate" if approximate else "exact"
+        logger.info(f"Computing SHAP values ({mode_info} mode)...")
+        
+        # Use approximate=True for ~10x faster computation (Saabas method)
+        # disable check_additivity to skip validation (~10% faster)
+        self._shap_values = explainer.shap_values(
+            X_sample,
+            approximate=approximate,
+            check_additivity=check_additivity
+        )
         
         # For multi-class, shap_values is a list
         if isinstance(self._shap_values, list):
-            logger.info(f"Computed SHAP values for {len(self._shap_values)} classes")
+            logger.info(f"Computed SHAP values for {len(self._shap_values)} classes with shape {self._shap_values[0].shape}")
         else:
             logger.info(f"Computed SHAP values with shape {self._shap_values.shape}")
         

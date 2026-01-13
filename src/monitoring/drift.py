@@ -51,24 +51,45 @@ class DriftDetector:
         self,
         reference_data: Optional[pd.DataFrame] = None,
         drift_threshold: float = 0.5,
-        reports_dir: Optional[str] = None
+        reports_dir: Optional[str] = None,
+        max_sample_size: int = 2000
     ):
         """
-        Initialize the drift detector.
+        Initialize the drift detector with performance optimizations.
         
         Args:
             reference_data: Reference dataset for comparison
             drift_threshold: Threshold for drift detection (0-1)
             reports_dir: Directory to save drift reports
+            max_sample_size: Maximum samples for drift computation (default 2000 for performance)
         """
         self.reference_data = reference_data
         self.drift_threshold = drift_threshold
         self.reports_dir = Path(reports_dir) if reports_dir else Path("logs/drift_reports")
         self.reports_dir.mkdir(parents=True, exist_ok=True)
+        self.max_sample_size = max_sample_size
         
         # Buffer for collecting current data
         self._current_buffer: List[Dict[str, Any]] = []
         self._buffer_size = 100  # Analyze drift every N predictions
+    
+    def _sample_data(self, df: pd.DataFrame, max_size: Optional[int] = None) -> pd.DataFrame:
+        """
+        Sample data for efficient drift detection.
+        
+        Args:
+            df: Input DataFrame
+            max_size: Maximum sample size (uses self.max_sample_size if None)
+            
+        Returns:
+            Sampled DataFrame
+        """
+        sample_size = max_size or self.max_sample_size
+        if len(df) > sample_size:
+            sampled = df.sample(n=sample_size, random_state=42)
+            logger.info(f"Sampled {sample_size} from {len(df)} rows for drift detection")
+            return sampled
+        return df
     
     def _create_dataset(self, df: pd.DataFrame) -> Dataset:
         """
@@ -242,23 +263,43 @@ class DriftDetector:
         self,
         current_data: pd.DataFrame,
         include_target_drift: bool = False,
-        target_column: Optional[str] = None
+        target_column: Optional[str] = None,
+        save_html: bool = False,
+        save_json: bool = True,
+        log_to_mlflow: bool = False,
+        mlflow_run_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        Generate a comprehensive drift report and extract drift metrics.
+        Generate optimized drift report with optional HTML/JSON export and MLflow logging.
+        
+        Performance optimizations:
+        - Samples data to max_sample_size for faster computation
+        - Skips HTML generation by default (can be enabled)
+        - Exports JSON for efficient storage
+        - Logs metrics and plots to MLflow
         
         Args:
             current_data: Current production data
             include_target_drift: Whether to include target drift analysis
             target_column: Name of the target column if analyzing target drift
+            save_html: Whether to save HTML report (default False for performance)
+            save_json: Whether to save JSON report (default True)
+            log_to_mlflow: Whether to log metrics/plots to MLflow (default False)
+            mlflow_run_id: MLflow run ID for logging (uses active run if None)
             
         Returns:
             Dict containing:
-            - 'report_path': Path to saved HTML report
+            - 'report_path': Path to saved HTML report (if save_html=True)
+            - 'json_path': Path to saved JSON report (if save_json=True)
             - 'overall_drift_score': Share of drifted columns (0-1)
             - 'feature_drift_scores': Dict of per-feature drift scores
             - 'is_drift_detected': Boolean indicating if drift detected
+            - 'reference_samples': Number of reference samples used
+            - 'current_samples': Number of current samples used
         """
+        import time
+        start_time = time.time()
+        
         if self.reference_data is None:
             raise ValueError("Reference data must be set before generating report")
         
@@ -267,28 +308,55 @@ class DriftDetector:
         current_data_filtered = current_data[available_cols].copy()
         reference_data_filtered = self.reference_data[available_cols].copy()
         
+        # Sample data for performance optimization
+        reference_sampled = self._sample_data(reference_data_filtered)
+        current_sampled = self._sample_data(current_data_filtered)
+        
         # Create Evidently datasets
-        ref_dataset = self._create_dataset(reference_data_filtered)
-        cur_dataset = self._create_dataset(current_data_filtered)
+        ref_dataset = self._create_dataset(reference_sampled)
+        cur_dataset = self._create_dataset(current_sampled)
         
         # Use DataDriftPreset for comprehensive report
         report = Report([DataDriftPreset()])
         
         # Evidently 0.7.0+: run(current_data, reference_data) returns a Snapshot
+        logger.info("Computing drift metrics...")
         snapshot = report.run(cur_dataset, ref_dataset)
+        computation_time = time.time() - start_time
+        logger.info(f"Drift computation completed in {computation_time:.2f}s")
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_path = self.reports_dir / f"full_drift_report_{timestamp}.html"
-        snapshot.save_html(str(report_path))
+        result_dict = {
+            "timestamp": timestamp,
+            "reference_samples": len(reference_sampled),
+            "current_samples": len(current_sampled),
+            "computation_time_seconds": computation_time
+        }
+        
+        # Save HTML report (optional, for manual review)
+        if save_html:
+            html_path = self.reports_dir / f"drift_report_{timestamp}.html"
+            snapshot.save_html(str(html_path))
+            result_dict["report_path"] = str(html_path)
+            logger.info(f"HTML report saved to {html_path}")
+        
+        # Save JSON report (default, for programmatic access)
+        if save_json:
+            json_path = self.reports_dir / f"drift_report_{timestamp}.json"
+            json_str = snapshot.json()
+            with open(json_path, 'w') as f:
+                f.write(json_str)
+            result_dict["json_path"] = str(json_path)
+            logger.info(f"JSON report saved to {json_path}")
         
         # Extract drift metrics from snapshot
-        result = snapshot.dict()
+        snapshot_dict = snapshot.dict()
         overall_drift_score = 0.0
         is_drift_detected = False
         feature_drift_scores = {}
         
         # Parse drift metrics from Evidently result structure
-        metrics = result.get("metrics", [])
+        metrics = snapshot_dict.get("metrics", [])
         for metric in metrics:
             metric_result = metric.get("result", {})
             if "share_of_drifted_columns" in metric_result:
@@ -299,14 +367,63 @@ class DriftDetector:
                     if isinstance(info, dict):
                         feature_drift_scores[feature] = info.get("drift_score", 0.0)
         
-        logger.info(f"Full drift report saved to {report_path}")
-        
-        return {
-            "report_path": str(report_path),
+        result_dict.update({
             "overall_drift_score": overall_drift_score,
             "feature_drift_scores": feature_drift_scores,
             "is_drift_detected": is_drift_detected
-        }
+        })
+        
+        # Log to MLflow (optional)
+        if log_to_mlflow:
+            try:
+                import mlflow
+                import matplotlib.pyplot as plt
+                
+                with mlflow.start_run(run_id=mlflow_run_id, nested=True) if mlflow_run_id else mlflow.start_run(nested=True):
+                    # Log scalar metrics
+                    mlflow.log_metric("drift_overall_score", overall_drift_score)
+                    mlflow.log_metric("drift_detected", 1.0 if is_drift_detected else 0.0)
+                    mlflow.log_metric("drift_reference_samples", len(reference_sampled))
+                    mlflow.log_metric("drift_current_samples", len(current_sampled))
+                    mlflow.log_metric("drift_computation_time", computation_time)
+                    
+                    # Log top 10 feature drift scores
+                    sorted_features = sorted(feature_drift_scores.items(), key=lambda x: x[1], reverse=True)
+                    for feature, score in sorted_features[:10]:
+                        safe_name = feature.replace(' ', '_').replace('-', '_')
+                        mlflow.log_metric(f"drift_feature_{safe_name}", score)
+                    
+                    # Create and log drift bar plot
+                    if feature_drift_scores:
+                        top_features = sorted_features[:15]
+                        features, scores = zip(*top_features)
+                        
+                        plt.figure(figsize=(10, 6))
+                        plt.barh(range(len(features)), scores, align='center')
+                        plt.yticks(range(len(features)), features)
+                        plt.xlabel('Drift Score')
+                        plt.title('Top 15 Features by Drift Score')
+                        plt.gca().invert_yaxis()
+                        plt.tight_layout()
+                        
+                        plot_path = self.reports_dir / f"drift_features_{timestamp}.png"
+                        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+                        plt.close()
+                        
+                        mlflow.log_artifact(str(plot_path), "drift")
+                        result_dict["drift_plot_path"] = str(plot_path)
+                    
+                    # Log JSON report as artifact
+                    if save_json and "json_path" in result_dict:
+                        mlflow.log_artifact(result_dict["json_path"], "drift")
+                    
+                    logger.info("Drift metrics and plots logged to MLflow")
+            except Exception as e:
+                logger.warning(f"Could not log drift metrics to MLflow: {e}")
+        
+        logger.info(f"Drift detection complete: score={overall_drift_score:.3f}, detected={is_drift_detected}")
+        
+        return result_dict
     
     def get_buffer_status(self) -> Dict[str, Any]:
         """
