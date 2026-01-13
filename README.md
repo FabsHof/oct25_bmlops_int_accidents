@@ -87,7 +87,7 @@ flowchart LR
 
 
 
-    subgraph CAF[CRON / AIRFLOW]
+    subgraph CAF[AIRFLOW]
         START[PROCESS START]:::airflow
         ETL[ETL]:::airflow
         TE[TRAIN & EVALUATE]:::airflow
@@ -128,12 +128,6 @@ flowchart LR
         D3 --> |PROCESS STEPS| D4
         linkStyle 20 stroke:#BA8E23,stroke-width:6px,stroke-dasharray:5 5
     end
-
-%% =======================
-%% CLICKABLE LINKS EXAMPLE
-%% =======================
-
-    %click DD "?page=training" "Test page"
 
 ```
 
