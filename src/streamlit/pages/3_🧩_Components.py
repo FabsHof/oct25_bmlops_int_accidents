@@ -101,38 +101,27 @@ st.markdown("Detailed overview of the tools and technologies powering our soluti
 
 st.markdown("---")
 
-# Component categories
-components = {
-    "overview": "📋 Components Overview",
-    "environment": "💻 Development Environment",
-    "data": "🗄️ Data Handling",
-    "model": "🤖 ML Model",
-    "api": "🌐 Prediction API",
-    "mlflow": "📊 Tracking & Versioning",
-    "docker": "🐳 Containerization",
-    "testing": "🧪 Unit Testing",
-    "monitoring": "📈 Drift & Monitoring",
-    "automation": "⚙️ Automation",
-    "frontend": "🖥️ User Frontend"
-}
-
-selected_component = st.selectbox(
-    "Select a component to explore:",
-    options=list(components.keys()),
-    format_func=lambda x: components[x]
-)
-
-st.markdown("---")
-
-if selected_component == "overview":
+# Overview section
+with st.expander("📋 Components Overview", expanded=True):
     st.markdown("## 📋 Components Overview")
     
     st.markdown("Our MLOps architecture comprises the following key components:")
     
     cols = st.columns(3)
-    component_list = list(components.items())[1:]
+    component_names = [
+        ("💻 Development Environment", "Development Environment"),
+        ("🗄️ Data Handling", "Data Handling"),
+        ("🤖 ML Model", "ML Model"),
+        ("🌐 Prediction API", "Prediction API"),
+        ("📊 Tracking & Versioning", "Tracking & Versioning"),
+        ("🐳 Containerization", "Containerization"),
+        ("🧪 Unit Testing", "Unit Testing"),
+        ("📈 Drift & Monitoring", "Drift & Monitoring"),
+        ("⚙️ Automation", "Automation"),
+        ("🖥️ User Frontend", "User Frontend")
+    ]
     
-    for idx, (key, name) in enumerate(component_list):
+    for idx, (name, _) in enumerate(component_names):
         with cols[idx % 3]:
             st.markdown(
                 f"""
@@ -151,7 +140,7 @@ if selected_component == "overview":
                 unsafe_allow_html=True
             )
 
-elif selected_component == "environment":
+with st.expander("💻 Development Environment"):
     render_component_card(
         title="Development Environment",
         what_needed=[
@@ -187,7 +176,7 @@ elif selected_component == "environment":
         screenshot_file="SS_github_project.png"
     )
 
-elif selected_component == "data":
+with st.expander("🗄️ Data Handling"):
     render_component_card(
         title="Data Handling",
         what_needed=[
@@ -201,7 +190,7 @@ elif selected_component == "data":
             "SQLite": False,
             "NoSQL (MongoDB)": False
         },
-        logo_file="Logo_tool_X.png",
+        logo_file="PostgreSQL.png",
         advantages=[
             "Robust and reliable RDBMS",
             "Excellent performance for structured data",
@@ -218,7 +207,7 @@ elif selected_component == "data":
         ]
     )
 
-elif selected_component == "model":
+with st.expander("🤖 ML Model"):
     render_component_card(
         title="ML Model",
         what_needed=[
@@ -233,7 +222,7 @@ elif selected_component == "model":
             "Neural Network": False,
             "Logistic Regression": False
         },
-        logo_file="Logo_tool_X.png",
+        logo_file="RandomForest.png",
         advantages=[
             "Handles categorical and numerical features well",
             "Built-in feature importance",
@@ -250,7 +239,7 @@ elif selected_component == "model":
         ]
     )
 
-elif selected_component == "api":
+with st.expander("🌐 Prediction API"):
     render_component_card(
         title="Prediction API",
         what_needed=[
@@ -264,7 +253,7 @@ elif selected_component == "api":
             "Flask": False,
             "Django REST": False
         },
-        logo_file="Logo_tool_X.png",
+        logo_file="FastAPI.png",
         advantages=[
             "Automatic OpenAPI documentation",
             "High performance with async support",
@@ -280,7 +269,7 @@ elif selected_component == "api":
         ]
     )
 
-elif selected_component == "mlflow":
+with st.expander("📊 Tracking & Versioning"):
     render_component_card(
         title="Tracking & Versioning",
         what_needed=[
@@ -294,7 +283,7 @@ elif selected_component == "mlflow":
             "Weights & Biases": False,
             "Neptune": False
         },
-        logo_file="Logo_tool_X.png",
+        logo_file="MLFlow.png",
         advantages=[
             "Open-source with no vendor lock-in",
             "Model registry with aliases",
@@ -311,7 +300,7 @@ elif selected_component == "mlflow":
         ]
     )
 
-elif selected_component == "docker":
+with st.expander("🐳 Containerization"):
     render_component_card(
         title="Containerization",
         what_needed=[
@@ -344,7 +333,7 @@ elif selected_component == "docker":
         screenshot_file="SS_docker.png"
     )
 
-elif selected_component == "testing":
+with st.expander("🧪 Unit Testing"):
     render_component_card(
         title="Unit Testing",
         what_needed=[
@@ -376,7 +365,7 @@ elif selected_component == "testing":
         screenshot_file="SS_testing.png"
     )
 
-elif selected_component == "monitoring":
+with st.expander("📈 Drift & Monitoring"):
     render_component_card(
         title="Drift & Monitoring",
         what_needed=[
@@ -408,7 +397,7 @@ elif selected_component == "monitoring":
         screenshot_file="SS_grafana_generic.png"
     )
 
-elif selected_component == "automation":
+with st.expander("⚙️ Automation"):
     render_component_card(
         title="Automation",
         what_needed=[
@@ -423,7 +412,7 @@ elif selected_component == "automation":
             "Dagster": False,
             "Cron": False
         },
-        logo_file="Logo_tool_X.png",
+        logo_file="AirflowLogo.png",
         advantages=[
             "Industry standard for workflow orchestration",
             "Rich UI for monitoring",
@@ -444,7 +433,7 @@ elif selected_component == "automation":
         ]
     )
 
-elif selected_component == "frontend":
+with st.expander("🖥️ User Frontend"):
     render_component_card(
         title="User Frontend",
         what_needed=[

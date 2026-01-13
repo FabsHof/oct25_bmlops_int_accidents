@@ -83,10 +83,10 @@ def main():
             """
             **Quick Links:**
             - 🏠 Home
-            - 🎯 [Prediction](/Prediction)
             - 📈 [Project Progress](/Project_Progress)
             - 🏗️ [Architecture](/Architecture)
             - 🧩 [Components](/Components)
+            - 🎯 [Prediction](/Prediction)
             - 📝 [Conclusion](/Conclusion)
             """
         )

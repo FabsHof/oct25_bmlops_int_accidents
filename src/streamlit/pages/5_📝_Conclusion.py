@@ -138,7 +138,7 @@ future_items = [
     {
         "category": "Model Improvements",
         "items": [
-            "Hyperparameter tuning with Optuna",
+            "Hyperparameter tuning",
             "Ensemble methods for better accuracy",
             "SHAP values for explainability"
         ],
